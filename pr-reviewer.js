@@ -1,18 +1,42 @@
 #!/usr/bin/env node
+
+/**
+ * PR自动化评审工具
+ * 
+ * 主要功能：
+ * - 自动获取GitLab MR信息
+ * - 分析代码变更和评论
+ * - 生成结构化评审报告
+ * - 支持AI智能分析（OpenAI、Copilot）
+ * 
+ * @author AI Assistant
+ * @version 1.0.0
+ */
+
 import { Gitlab } from "@gitbeaker/rest";
 import OpenAI from 'openai';
-import { CopilotAnalyzer } from './copilot-analyzer.js';
 import { AutoCopilotAnalyzer } from './auto-copilot-analyzer.js';
 import { configLoader } from './config-loader.js';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { execSync } from 'child_process';
 
 // 获取脚本所在目录
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// 读取配置文件（使用安全的配置加载器）
+// 确保fetch可用（Node.js 18+内置，旧版本需要polyfill）
+if (typeof fetch === 'undefined') {
+  global.fetch = (await import('node-fetch')).default;
+}
+
+/**
+ * 加载配置文件
+ * 使用安全的配置加载器，支持环境变量替换
+ * 
+ * @returns {Promise<Object>} 配置对象
+ */
 async function loadConfig() {
   try {
     return await configLoader.loadConfig();
@@ -24,14 +48,25 @@ async function loadConfig() {
   }
 }
 
+/**
+ * AI分析器类
+ * 负责调用不同的AI服务进行代码分析
+ */
 class AIAnalyzer {
   constructor(config) {
     this.config = config;
+    this.openai = null;
+    this.autoCopilotAnalyzer = null;
+    
     if (config.review_settings.enable_ai_analysis) {
       this.setupAI();
     }
   }
 
+  /**
+   * 初始化AI服务
+   * 根据配置选择AI提供商（移除已弃用的copilot选项）
+   */
   setupAI() {
     const aiConfig = this.config.ai_config;
     const provider = this.config.review_settings.ai_provider;
@@ -49,13 +84,19 @@ class AIAnalyzer {
         apiKey: apiKey,
         baseURL: aiConfig.openai.base_url
       });
-    } else if (provider === 'copilot') {
-      this.copilotAnalyzer = new CopilotAnalyzer(this.config);
     } else if (provider === 'auto-copilot') {
       this.autoCopilotAnalyzer = new AutoCopilotAnalyzer(this.config);
     }
   }
 
+  /**
+   * 分析代码变更
+   * 根据配置的AI提供商进行智能分析
+   * 
+   * @param {Array} diff - 代码差异数组
+   * @param {Object} mrDetails - MR详细信息
+   * @returns {Promise<Object|null>} 分析结果
+   */
   async analyzeCodeChanges(diff, mrDetails) {
     if (!this.config.review_settings.enable_ai_analysis) {
       return null;
@@ -64,11 +105,9 @@ class AIAnalyzer {
     try {
       const provider = this.config.review_settings.ai_provider;
       
-      if (provider === 'copilot') {
-        return await this.copilotAnalyzer.analyzeCodeChanges(diff, mrDetails);
-      } else if (provider === 'auto-copilot') {
+      if (provider === 'auto-copilot') {
         return await this.autoCopilotAnalyzer.analyzeCodeChanges(diff, mrDetails);
-      } else {
+      } else if (provider === 'openai') {
         const prompt = this.createAnalysisPrompt(diff, mrDetails);
         const analysis = await this.callAI(prompt);
         return this.parseAIResponse(analysis);
@@ -79,6 +118,14 @@ class AIAnalyzer {
     }
   }
 
+  /**
+   * 创建AI分析提示词
+   * 格式化代码差异和MR信息为AI可理解的格式
+   * 
+   * @param {Array} diff - 代码差异数组
+   * @param {Object} mrDetails - MR详细信息
+   * @returns {string} 格式化的提示词
+   */
   createAnalysisPrompt(diff, mrDetails) {
     const diffText = diff.map(file => {
       return `文件: ${file.new_path}\n${file.diff}`;
@@ -114,6 +161,12 @@ ${diffText}
 }`;
   }
 
+  /**
+   * 调用OpenAI API进行分析
+   * 
+   * @param {string} prompt - 分析提示词
+   * @returns {Promise<Object>} 分析结果
+   */
   async callAI(prompt) {
     if (this.config.review_settings.ai_provider === 'openai') {
       const response = await this.openai.chat.completions.create({
@@ -557,7 +610,7 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
 
     // 使用全局变量或者从参数传递
     const mrIidValue = global.currentMrIid || '0'; 
-    const fileName = `review_git_${mrIidValue}.text`;
+    const fileName = `review_git_${mrIidValue}.txt`;
     const filePath = path.join(outputDir, fileName);
     
     await fs.writeFile(filePath, report, 'utf8');
@@ -737,6 +790,14 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
     cardData.card.elements.push({
       tag: "hr"
     });
+    
+    // 生成报告和JSON文件的下载链接
+    const ip = this.getLocalIP();
+    const reportFileName = `review_git_${mrIid}.txt`;
+    const jsonFileName = `feishu_card_${mrIid}.json`;
+    const reportDownloadUrl = `http://${ip}:8899/reports/${reportFileName}`;
+    const jsonDownloadUrl = `http://${ip}:8899/reports/${jsonFileName}`;
+    
     cardData.card.elements.push({
       tag: "action",
       actions: [
@@ -752,12 +813,38 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
         {
           tag: "button",
           text: {
-            content: "Jenkins 构建",
+            content: "📄 下载报告",
             tag: "plain_text"
           },
           type: "default",
-          url: `http://jenkins.atomverse.com.cn:8080/job/APP_revicew/${process.env.BUILD_NUMBER || 'latest'}/console`
+          url: reportDownloadUrl
         }
+    
+      ]
+    });
+    
+    // 添加第二行按钮
+    cardData.card.elements.push({
+      tag: "action",
+      actions: [
+      {
+        tag: "button",
+        text: {
+        content: "Jenkins 构建",
+        tag: "plain_text"
+        },
+        type: "default",
+        url: `http://jenkins.atomverse.com.cn:8080/job/APP_revicew/${process.env.BUILD_NUMBER || 'latest'}/console`
+      },
+      {
+        tag: "button",
+        text: {
+        content: "🌐 PR 查看",
+        tag: "plain_text"
+        },
+        type: "default",
+        url: mrDetails.web_url
+      }
       ]
     });
     
@@ -775,6 +862,97 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
     
     await fs.writeFile(filePath, JSON.stringify(cardData, null, 2), 'utf8');
     return path.resolve(filePath);
+  }
+
+  /**
+   * 获取本机IP地址
+   * 
+   * @returns {string} 本机IP地址
+   */
+  getLocalIP() {
+    try {
+      const ipResult = execSync("ifconfig | grep -E 'inet [0-9]' | grep -v '127.0.0.1' | head -1 | awk '{print $2}'", { encoding: 'utf8' });
+      if (ipResult && ipResult.trim()) {
+        return ipResult.trim();
+      }
+    } catch (error) {
+      console.warn('⚠️ 获取IP地址失败:', error.message);
+      // 如果获取失败，尝试备用方法
+      try {
+        const ipResult = execSync("hostname -I | awk '{print $1}'", { encoding: 'utf8' });
+        if (ipResult && ipResult.trim() && !ipResult.startsWith('127.')) {
+          return ipResult.trim();
+        }
+      } catch (backupError) {
+        console.warn('⚠️ 备用IP获取方法也失败:', backupError.message);
+      }
+    }
+    return 'localhost';
+  }
+
+  /**
+   * 生成文件的HTTP访问URL
+   * 
+   * @param {string} filePath - 本地文件路径
+   * @returns {string} HTTP访问URL
+   */
+  generateFileURL(filePath) {
+    const fileName = path.basename(filePath);
+    const ip = this.getLocalIP();
+    return `http://${ip}:8899/reports/${fileName}`;
+  }
+
+  /**
+   * 发送飞书Webhook通知
+   */
+  async sendFeishuWebhook(cardData) {
+    try {
+      const feishuConfig = this.config.notification?.feishu;
+      
+      if (!feishuConfig?.enabled) {
+        console.log('📱 飞书通知未启用，跳过发送');
+        return false;
+      }
+      
+      const webhookUrl = feishuConfig.webhook_url;
+      
+      if (!webhookUrl || 
+          webhookUrl === '${FEISHU_WEBHOOK_URL}' || 
+          webhookUrl === 'undefined' ||
+          webhookUrl.includes('${') ||
+          webhookUrl === '' ||
+          !webhookUrl.startsWith('https://')) {
+        console.warn('⚠️ 飞书Webhook URL未配置或无效，跳过发送');
+        return false;
+      }
+      
+      console.log('📨 正在发送飞书通知...');
+      console.log('🔗 Webhook URL:', webhookUrl.substring(0, 50) + '...' + webhookUrl.slice(-10));
+      
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(cardData)
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log('✅ 飞书通知发送成功');
+        console.log('📊 响应状态:', response.status);
+        return true;
+      } else {
+        console.error('❌ 飞书通知发送失败:', response.status, response.statusText);
+        const errorText = await response.text();
+        console.error('📄 错误详情:', errorText);
+        return false;
+      }
+      
+    } catch (error) {
+      console.error('❌ 发送飞书通知时出错:', error.message);
+      return false;
+    }
   }
 
   /**
@@ -841,9 +1019,24 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
       const filePath = await this.saveReportToFile(report);
       const feishuCardPath = await this.saveFeishuCardData(feishuCardData);
       
+      // 10. 发送飞书Webhook通知
+      await this.sendFeishuWebhook(feishuCardData);
+      
+      // 11. 生成HTTP访问URL
+      const fileURL = this.generateFileURL(filePath);
+      const jsonURL = this.generateFileURL(feishuCardPath);
+      
       console.log(`✅ Review完成！报告已保存到: ${filePath}`);
       console.log(`📱 飞书卡片数据已保存到: ${feishuCardPath}`);
-      return filePath;
+      console.log(`🌐 在线访问链接: ${fileURL}`);
+      console.log(`📊 JSON数据链接: ${jsonURL}`);
+      
+      return {
+        filePath,
+        fileURL,
+        feishuCardPath,
+        jsonURL
+      };
       
     } catch (error) {
       console.error(`❌ Review失败: ${error.message}`);

@@ -16,7 +16,7 @@
       {
         "tag": "div",
         "text": {
-          "content": "**🎯 [feat](main): 添加代码检测日志以验证正确性**\n👤 **提交者**: zhanghongxin2\n🌿 **分支**: `zhx/zhx_V0.2.1` → `feat_V0.2.1`\n⏰ **时间**: 2025/8/5 16:17:18",
+          "content": "**🎯 [feat](main): 添加代码检测日志以验证正确性**\n👤 **提交者**: zhanghongxin2\n🌿 **分支**: `zhx/zhx_V0.2.1` → `feat_V0.2.1`\n⏰ **时间**: 2025/8/5 17:40:50",
           "tag": "lark_md"
         }
       },
@@ -88,7 +88,7 @@
               "tag": "plain_text"
             },
             "type": "default",
-            "url": "http://jenkins.atomverse.com.cn:8080/job/APP_revicew/33/console"
+            "url": "http://jenkins.atomverse.com.cn:8080/job/APP_revicew/latest/console"
           }
         ]
       }

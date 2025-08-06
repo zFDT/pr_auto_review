@@ -1,4 +1,21 @@
 #!/usr/bin/env node
+
+/**
+ * 自动化VS Code Copilot分析器
+ * 专为Flutter项目优化的智能代码审查工具
+ * 
+ * 功能特性：
+ * - Flutter专项代码质量检查
+ * - 性能优化建议
+ * - UI/UX一致性检查
+ * - 错误处理与稳定性分析
+ * - 依赖管理检查
+ * - 安全性检查
+ * 
+ * @author AI Assistant
+ * @version 1.0.0
+ */
+
 import fs from 'fs/promises';
 import path from 'path';
 import { exec } from 'child_process';
@@ -6,7 +23,10 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
-// 自动化VS Code Copilot分析器 - Flutter专用版
+/**
+ * 自动化VS Code Copilot分析器类
+ * 专为Flutter项目设计的智能代码审查工具
+ */
 class AutoCopilotAnalyzer {
   constructor(config) {
     this.config = config;
@@ -14,6 +34,10 @@ class AutoCopilotAnalyzer {
     this.loadFlutterConfig();
   }
 
+  /**
+   * 加载Flutter专用配置文件
+   * 如果不存在则使用默认配置
+   */
   async loadFlutterConfig() {
     try {
       const configPath = path.join(process.cwd(), 'flutter-review-config.json');
@@ -21,7 +45,10 @@ class AutoCopilotAnalyzer {
       this.flutterConfig = JSON.parse(configContent);
     } catch (error) {
       console.warn('未找到Flutter配置文件，使用默认配置');
-      this.flutterConfig = { review_focus: {}, output_settings: { include_detailed_diff: false } };
+      this.flutterConfig = { 
+        review_focus: {}, 
+        output_settings: { include_detailed_diff: false } 
+      };
     }
   }
 

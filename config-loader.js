@@ -1,4 +1,18 @@
 #!/usr/bin/env node
+
+/**
+ * 安全的配置加载器
+ * 
+ * 功能特性：
+ * - 支持环境变量替换
+ * - 敏感信息保护
+ * - 配置验证
+ * - 单例模式
+ * 
+ * @author AI Assistant
+ * @version 1.0.0
+ */
+
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -17,6 +31,9 @@ class ConfigLoader {
 
   /**
    * 加载环境变量文件
+   * 解析.env文件并设置到process.env中
+   * 
+   * @param {string} envPath - 环境变量文件路径
    */
   async loadEnvFile(envPath = '.env') {
     try {

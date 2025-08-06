@@ -18,8 +18,8 @@
     }
   },
   "review_settings": {
-    "max_files_warning": 15,
-    "max_lines_warning": 1000,
+    "max_files_warning": 50,
+    "max_lines_warning": 10000,
     "include_detailed_diff": true,
     "check_console_logs": true,
     "check_todos": true,
@@ -51,10 +51,7 @@
     "max_file_size": 100000
   },
   "ai_config": {
-    "github_copilot": {
-      "api_key": "${GITHUB_COPILOT_TOKEN}",
-      "model": "gpt-4"
-    },
+    "_comment": "AI模型配置说明请参考 AI_MODELS_GUIDE.md",
     "openai": {
       "api_key": "${OPENAI_API_KEY}",
       "model": "gpt-4",
