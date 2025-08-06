@@ -75,24 +75,47 @@ JOB_NAME="${JOB_NAME:-APP_revicew}"
 BUILD_URL="${BUILD_URL:-http://jenkins.atomverse.com.cn:8080/job/$JOB_NAME/$BUILD_NUMBER/console}"
 GH_PATH="/opt/homebrew/bin/gh"
 
-# 从环境变量或参数获取配置
-if [ $# -ge 2 ]; then
-    REPO_NAME="$1"
-    MR_IID="$2"
-    # 如果有第3个参数，用作BUILD_NUMBER
-    if [ $# -ge 3 ]; then
-        BUILD_NUMBER="$3"
-    fi
-fi
-
 # 项目路径和Node.js路径
 PROJECT_ROOT="/path/to/pr-review-automation"
 NODE_PATH="/opt/homebrew/bin/node"
 PR_REVIEWER_SCRIPT="$PROJECT_ROOT/pr-reviewer.js"
 
-# 构建 MR URL
-MR_URL="https://git.dreame.tech/fdm_printer/zm_app/-/merge_requests/$MR_IID"
-REVIEW_GIT_PATH="$PROJECT_ROOT/reports/review_git_$MR_IID.text"
+# 文件服务器配置
+FILE_SERVER_PORT=${FILE_SERVER_PORT:-8899}
+FILE_SERVER_HOST=${FILE_SERVER_HOST:-"0.0.0.0"}
+
+# 获取本机IP地址
+get_local_ip() {
+    # 尝试多种方法获取本机IP
+    local ip=""
+    
+    # 方法1: 使用ifconfig获取非回环地址
+    if command -v ifconfig >/dev/null 2>&1; then
+        ip=$(ifconfig | grep -E "inet [0-9]" | grep -v "127.0.0.1" | head -1 | awk '{print $2}')
+    fi
+    
+    # 方法2: 使用ip命令
+    if [ -z "$ip" ] && command -v ip >/dev/null 2>&1; then
+        ip=$(ip route get 8.8.8.8 2>/dev/null | head -1 | awk '{print $7}')
+    fi
+    
+    # 方法3: 使用hostname -I（Linux）
+    if [ -z "$ip" ] && command -v hostname >/dev/null 2>&1; then
+        ip=$(hostname -I 2>/dev/null | cut -d' ' -f1)
+    fi
+    
+    # 方法4: 连接外部服务获取本机IP
+    if [ -z "$ip" ]; then
+        ip=$(curl -s ifconfig.me 2>/dev/null || curl -s icanhazip.com 2>/dev/null || echo "localhost")
+    fi
+    
+    # 默认值
+    [ -z "$ip" ] && ip="localhost"
+    echo "$ip"
+}
+
+FILE_SERVER_IP=$(get_local_ip)
+FILE_SERVER_BASE_URL="http://${FILE_SERVER_IP}:${FILE_SERVER_PORT}"
 
 # 使用说明和参数检查
 usage() {
@@ -109,11 +132,13 @@ usage() {
     echo "  构建编号    Jenkins构建编号 (默认: 时间戳)"
     echo
     echo "选项："
-    echo "  -h, --help     显示此帮助信息"
-    echo "  -v, --verbose  详细输出模式"
-    echo "  -d, --debug    调试模式"
-    echo "  --no-notify    不发送飞书通知"
-    echo "  --dry-run      预览模式，不执行实际操作"
+    echo "  -h, --help       显示此帮助信息"
+    echo "  -v, --verbose    详细输出模式"
+    echo "  -d, --debug      调试模式"
+    echo "  --no-notify      不发送飞书通知"
+    echo "  --dry-run        预览模式，不执行实际操作"
+    echo "  --stop-server    停止文件服务器"
+    echo "  --server-port    指定文件服务器端口 (默认: 8899)"
     echo
     echo "示例："
     echo "  $0                           # 使用默认参数"
@@ -129,6 +154,7 @@ VERBOSE=false
 DEBUG=false
 DRY_RUN=false
 NO_NOTIFY=false
+STOP_SERVER=false
 
 # 先处理选项参数
 args=()
@@ -154,6 +180,20 @@ while [[ $# -gt 0 ]]; do
         --no-notify)
             NO_NOTIFY=true
             shift
+            ;;
+        --stop-server)
+            STOP_SERVER=true
+            shift
+            ;;
+        --server-port)
+            shift
+            if [[ $# -gt 0 && $1 =~ ^[0-9]+$ ]]; then
+                FILE_SERVER_PORT="$1"
+                shift
+            else
+                error "错误：--server-port 需要一个数字参数"
+                exit 1
+            fi
             ;;
         -*)
             error "未知选项: $1"
@@ -186,6 +226,31 @@ fi
 # 设置默认值
 REPO_NAME="${REPO_NAME:-ZM App}"
 MR_IID="${MR_IID:-161}"
+
+# 构建URL和路径（在参数解析完成后）
+MR_URL="https://git.dreame.tech/fdm_printer/zm_app/-/merge_requests/$MR_IID"
+REVIEW_GIT_PATH="$PROJECT_ROOT/reports/review_git_$MR_IID.text"
+REVIEW_FILE_URL="${FILE_SERVER_BASE_URL}/reports/review_git_${MR_IID}.text"
+
+# 如果只是要停止服务器，执行后退出
+if [ "$STOP_SERVER" = "true" ]; then
+    log "🛑 管理文件服务器..."
+    
+    if launchctl list | grep -q "com.dreame.pr-review.file-server"; then
+        info "检测到系统服务正在运行"
+        info "💡 使用以下命令管理系统服务:"
+        info "    $PROJECT_ROOT/install-file-server.sh status    # 查看状态"
+        info "    $PROJECT_ROOT/install-file-server.sh restart   # 重启服务"
+        info "    $PROJECT_ROOT/install-file-server.sh uninstall # 卸载服务"
+    else
+        warn "系统服务未运行，清理临时服务器..."
+        stop_file_server
+        log "✅ 临时文件服务器已停止"
+        info "💡 建议安装系统服务: $PROJECT_ROOT/install-file-server.sh install"
+    fi
+    
+    exit 0
+fi
 
 
 if [ "$VERBOSE" = true ]; then
@@ -275,6 +340,120 @@ pr_reviewer() {
     error "错误输出: $output"
     return $exit_code
   fi
+}
+
+# 启动文件服务器（检查系统服务状态）
+start_file_server() {
+    # 检查系统服务是否运行
+    if launchctl list | grep -q "com.dreame.pr-review.file-server"; then
+        debug "文件服务器系统服务正在运行"
+        
+        # 验证端口是否可访问
+        if curl -s "http://localhost:$FILE_SERVER_PORT" >/dev/null 2>&1; then
+            log "✅ 文件服务器已通过系统服务运行"
+            info "🔗 文件服务器地址: $FILE_SERVER_BASE_URL"
+            return 0
+        else
+            warn "系统服务运行中但端口不可访问，尝试重启服务"
+            "$PROJECT_ROOT/install-file-server.sh" restart >/dev/null 2>&1 || true
+            sleep 3
+            
+            if curl -s "http://localhost:$FILE_SERVER_PORT" >/dev/null 2>&1; then
+                log "✅ 文件服务器重启成功"
+                info "🔗 文件服务器地址: $FILE_SERVER_BASE_URL"
+                return 0
+            else
+                error "❌ 文件服务器重启后仍不可访问"
+                return 1
+            fi
+        fi
+    else
+        warn "文件服务器系统服务未运行"
+        info "💡 请运行以下命令安装自动启动服务:"
+        info "    $PROJECT_ROOT/install-file-server.sh install"
+        
+        # 尝试手动启动临时服务器
+        warn "尝试启动临时文件服务器..."
+        start_temporary_file_server
+        return $?
+    fi
+}
+
+# 启动临时文件服务器（备用方案）
+start_temporary_file_server() {
+    local server_pid_file="$PROJECT_ROOT/.temp_file_server.pid"
+    
+    # 检查临时服务器是否已在运行
+    if [ -f "$server_pid_file" ]; then
+        local existing_pid=$(cat "$server_pid_file")
+        if kill -0 "$existing_pid" 2>/dev/null; then
+            debug "临时文件服务器已在运行，PID: $existing_pid"
+            return 0
+        else
+            rm -f "$server_pid_file"
+        fi
+    fi
+    
+    # 检查端口是否被占用
+    if lsof -i ":$FILE_SERVER_PORT" >/dev/null 2>&1; then
+        warn "端口 $FILE_SERVER_PORT 已被占用，尝试使用该服务"
+        return 0
+    fi
+    
+    log "🌐 启动临时文件服务器在端口 $FILE_SERVER_PORT..."
+    
+    # 使用Python启动HTTP服务器
+    cd "$PROJECT_ROOT"
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -m http.server "$FILE_SERVER_PORT" --bind "$FILE_SERVER_HOST" >/dev/null 2>&1 &
+        local server_pid=$!
+    elif command -v python >/dev/null 2>&1; then
+        python -m SimpleHTTPServer "$FILE_SERVER_PORT" >/dev/null 2>&1 &
+        local server_pid=$!
+    else
+        error "未找到Python，无法启动临时文件服务器"
+        return 1
+    fi
+    
+    # 保存PID
+    echo "$server_pid" > "$server_pid_file"
+    
+    # 等待服务器启动
+    sleep 2
+    
+    # 验证服务器是否启动成功
+    if kill -0 "$server_pid" 2>/dev/null; then
+        log "✅ 临时文件服务器启动成功，PID: $server_pid"
+        info "🔗 文件服务器地址: $FILE_SERVER_BASE_URL"
+        warn "💡 建议安装系统服务以获得更好的稳定性"
+        return 0
+    else
+        error "❌ 临时文件服务器启动失败"
+        rm -f "$server_pid_file"
+        return 1
+    fi
+}
+
+# 停止文件服务器（仅清理临时服务器）
+stop_file_server() {
+    # 只清理临时文件服务器，不影响系统服务
+    local temp_pid_file="$PROJECT_ROOT/.temp_file_server.pid"
+    
+    if [ -f "$temp_pid_file" ]; then
+        local server_pid=$(cat "$temp_pid_file")
+        if kill -0 "$server_pid" 2>/dev/null; then
+            debug "停止临时文件服务器，PID: $server_pid"
+            kill "$server_pid" 2>/dev/null || true
+            sleep 1
+            # 如果进程仍在运行，强制终止
+            if kill -0 "$server_pid" 2>/dev/null; then
+                kill -9 "$server_pid" 2>/dev/null || true
+            fi
+        fi
+        rm -f "$temp_pid_file"
+    fi
+    
+    # 注意：不停止系统服务，让它继续运行
 }
 
 # 解析评审报告获取统计信息
@@ -430,9 +609,10 @@ $main_issues
 
 🔗 **查看详情**: $MR_URL
 🏗️ **Jenkins构建**: $jenkins_url
+$([ "$REVIEW_FILE_URL" != "$REVIEW_GIT_PATH" ] && echo "📄 **详细报告**: $REVIEW_FILE_URL" || echo "")
 
 ---
-💡 详细评审报告请查看Jenkins构建日志
+💡 详细评审报告$([ "$REVIEW_FILE_URL" != "$REVIEW_GIT_PATH" ] && echo "可直接点击上方链接查看" || echo "请查看Jenkins构建日志")
 TEXT_EOF
 
     # 转义特殊字符并构建JSON
@@ -501,7 +681,11 @@ send_simple_notification() {
 
 # 清理临时文件
 cleanup() {
-    log "保留临时文件以供调试..."
+    if [ "$DRY_RUN" != "true" ]; then
+        log "保留临时文件以供调试..."
+        # 只清理临时文件服务器，保持系统服务运行
+        stop_file_server
+    fi
     # 取消注释下面的行来启用清理
     # rm -f mr_changes.json changes_summary.txt review_result.txt feishu_message.json review_context.txt
 }
@@ -557,6 +741,12 @@ main() {
         exit 1
     fi
 
+    # 启动文件服务器
+    if ! start_file_server; then
+        warn "⚠️ 文件服务器启动失败，将使用本地路径"
+        REVIEW_FILE_URL="$REVIEW_GIT_PATH"
+    fi
+
     # 执行评审流程
     log "🚀 开始执行评审流程..."
     if ! pr_reviewer; then
@@ -581,7 +771,12 @@ main() {
 
     # 输出关键文件位置
     info "📁 生成的文件："
-    info "  - 评审结果: $REVIEW_GIT_PATH"
+    if [[ "$REVIEW_FILE_URL" == http* ]]; then
+        info "  - 评审结果: $REVIEW_FILE_URL (可外部访问)"
+        info "  - 本地路径: $REVIEW_GIT_PATH"
+    else
+        info "  - 评审结果: $REVIEW_GIT_PATH (仅本地访问)"
+    fi
     # 显示最终报告大小
     if [ -f "$REVIEW_GIT_PATH" ]; then
         local report_size=$(wc -c < "$REVIEW_GIT_PATH" 2>/dev/null || echo "0")
