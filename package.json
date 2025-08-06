@@ -1,0 +1,46 @@
+{
+  "name": "pr-review-automation",
+  "version": "1.0.0",
+  "description": "自动化PR review脚本，支持GitLab集成和AI分析",
+  "type": "module",
+  "main": "pr-reviewer.js",
+  "scripts": {
+    "start": "node pr-reviewer.js",
+    "review": "node pr-reviewer.js",
+    "test": "echo \"暂无测试\" && exit 0",
+    "test-gitlab": "node test-gitlab.js",
+    "check-config": "node -e \"import('./config-loader.js').then(({configLoader}) => configLoader.loadConfig().then(config => console.log('配置验证通过')).catch(err => { console.error('配置错误:', err.message); process.exit(1); }))\"",
+    "setup": "npm install && cp .env.example .env && echo '请编辑 .env 文件配置环境变量'",
+    "lint": "echo '暂无代码检查工具配置'",
+    "dev": "DEBUG=true node pr-reviewer.js"
+  },
+  "keywords": [
+    "gitlab",
+    "merge-request",
+    "code-review",
+    "automation",
+    "ai-analysis",
+    "flutter",
+    "dart"
+  ],
+  "author": "AI Assistant",
+  "license": "MIT",
+  "dependencies": {
+    "@gitbeaker/rest": "^43.3.0",
+    "openai": "^4.0.0"
+  },
+  "bin": {
+    "pr-reviewer": "./pr-reviewer.js"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/your-username/pr-review-automation.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/pr-review-automation/issues"
+  },
+  "homepage": "https://github.com/your-username/pr-review-automation#readme"
+}

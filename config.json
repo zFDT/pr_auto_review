@@ -1,0 +1,70 @@
+{
+  "gitlab": {
+    "host": "https://git.dreame.tech",
+    "token": "${GITLAB_TOKEN}"
+  },
+  "projects": {
+    "ZM App": {
+      "id": 9831,
+      "description": "ZM应用主项目"
+    },
+    "StaticRelease": {
+      "id": 161,
+      "description": "StaticRelease项目"
+    },
+    "android-3d-preliminary-research": {
+      "id": 10444,
+      "description": "Android 3D初步研究项目"
+    }
+  },
+  "review_settings": {
+    "max_files_warning": 15,
+    "max_lines_warning": 1000,
+    "include_detailed_diff": true,
+    "check_console_logs": true,
+    "check_todos": true,
+    "enable_ai_analysis": true,
+    "ai_provider": "auto-copilot",
+    "exclude_patterns": [
+      "*.min.js",
+      "*.min.css",
+      "node_modules/*",
+      "dist/*",
+      "build/*",
+      ".git/*",
+      "*.log",
+      "*.lock",
+      "package-lock.json",
+      "yarn.lock",
+      "*.map",
+      "*.svg",
+      "*.png",
+      "*.jpg",
+      "*.jpeg",
+      "*.gif",
+      "*.ico",
+      "*.woff",
+      "*.woff2",
+      "*.ttf",
+      "*.eot"
+    ],
+    "max_file_size": 100000
+  },
+  "ai_config": {
+    "github_copilot": {
+      "api_key": "${GITHUB_COPILOT_TOKEN}",
+      "model": "gpt-4"
+    },
+    "openai": {
+      "api_key": "${OPENAI_API_KEY}",
+      "model": "gpt-4",
+      "base_url": "https://api.openai.com/v1"
+    }
+  },
+  "notification": {
+    "feishu": {
+      "webhook_url": "${FEISHU_WEBHOOK_URL}",
+      "enabled": true
+    }
+  }
+}
