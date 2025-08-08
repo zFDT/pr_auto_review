@@ -8,6 +8,7 @@
     "start": "node pr-reviewer.js",
     "review": "node pr-reviewer.js",
     "test": "echo \"暂无测试\" && exit 0",
+    "test-copilot": "node test-copilot.js",
     "check-config": "node -e \"import('./config-loader.js').then(({configLoader}) => configLoader.loadConfig().then(config => console.log('配置验证通过')).catch(err => { console.error('配置错误:', err.message); process.exit(1); }))\"",
     "check-feishu": "node check-feishu.js",
     "setup": "npm install && echo '请编辑 config.json 文件配置项目信息'",

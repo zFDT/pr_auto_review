@@ -1,0 +1,256 @@
+{
+  "name": "pr-review-automation",
+  "version": "2.1.0",
+  "description": "🤖 智能PR评审工具 - 集成多种AI引擎的GitLab代码审查自动化系统，支持Flutter、JavaScript、TypeScript等多语言分析",
+  "type": "module",
+  "main": "pr-reviewer-optimized.js",
+  "bin": {
+    "pr-reviewer": "./pr-reviewer-optimized.js",
+    "pr-review": "./pr-reviewer-optimized.js"
+  },
+  "scripts": {
+    "start": "node pr-reviewer-optimized.js",
+    "review": "node pr-reviewer-optimized.js",
+    "dev": "DEBUG=true node pr-reviewer-optimized.js",
+    "test": "node --experimental-loader ./test/loader.js test/**/*.test.js",
+    "test:unit": "node --experimental-loader ./test/loader.js test/unit/**/*.test.js",
+    "test:integration": "node --experimental-loader ./test/loader.js test/integration/**/*.test.js",
+    "test:ai": "node test-ai-analyzers.js",
+    "test:copilot": "node test-copilot.js",
+    "test:config": "node config-loader-optimized.js",
+    "check-config": "node -e \"import('./config-loader-optimized.js').then(({configLoader}) => configLoader.loadConfig().then(() => console.log('✅ 配置验证通过')).catch(err => { console.error('❌ 配置错误:', err.message); process.exit(1); }))\"",
+    "check-feishu": "node check-feishu.js",
+    "check-health": "node health-check.js",
+    "diagnose": "node config-loader-optimized.js",
+    "validate": "npm run check-config && npm run test:unit",
+    "build": "npm run validate && npm run build:docs",
+    "build:docs": "jsdoc -c jsdoc.conf.json",
+    "lint": "eslint *.js --fix",
+    "format": "prettier --write *.js *.md",
+    "setup": "npm install && echo '请编辑 config.json 文件配置项目信息' && npm run check-config",
+    "install-hooks": "husky install && husky add .husky/pre-commit \"npm run lint && npm run test:unit\"",
+    "clean": "rm -rf reports/*.txt reports/*.json node_modules/.cache",
+    "backup-config": "cp config.json config.backup.json && echo '配置已备份到 config.backup.json'",
+    "switch-ai": "node switch-ai-provider.js",
+    "benchmark": "node benchmark/performance-test.js",
+    "docker:build": "docker build -t pr-review-automation .",
+    "docker:run": "docker run --env-file .env -v $(pwd)/reports:/app/reports pr-review-automation",
+    "ci:install": "npm ci --only=production",
+    "ci:test": "npm run test:unit && npm run check-config",
+    "release": "npm version patch && npm publish",
+    "docs:serve": "npx http-server docs -p 8080",
+    "preinstall": "node --version",
+    "postinstall": "echo '🎉 安装完成！运行 npm run setup 进行初始化配置'"
+  },
+  "keywords": [
+    "gitlab",
+    "merge-request",
+    "code-review",
+    "automation",
+    "ai-analysis",
+    "flutter",
+    "dart",
+    "javascript",
+    "typescript",
+    "static-analysis",
+    "code-quality",
+    "openai",
+    "copilot",
+    "feishu",
+    "notification",
+    "ci-cd",
+    "devops",
+    "智能审查",
+    "代码分析",
+    "自动化"
+  ],
+  "author": {
+    "name": "AI Assistant",
+    "email": "ai@example.com",
+    "url": "https://github.com/ai-assistant"
+  },
+  "contributors": [
+    {
+      "name": "Development Team",
+      "email": "dev@example.com"
+    }
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.0.0",
+    "npm": ">=6.0.0"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "dependencies": {
+    "@gitbeaker/rest": "^43.3.0",
+    "openai": "^4.20.0",
+    "node-fetch": "^3.3.2",
+    "chalk": "^5.3.0",
+    "commander": "^11.1.0",
+    "dotenv": "^16.3.1",
+    "yaml": "^2.3.4"
+  },
+  "devDependencies": {
+    "eslint": "^8.55.0",
+    "prettier": "^3.1.0",
+    "husky": "^8.0.3",
+    "lint-staged": "^15.2.0",
+    "jsdoc": "^4.0.2",
+    "mocha": "^10.2.0",
+    "chai": "^4.3.10",
+    "nyc": "^15.1.0",
+    "sinon": "^17.0.1",
+    "supertest": "^6.3.3",
+    "nodemon": "^3.0.2"
+  },
+  "peerDependencies": {
+    "typescript": ">=4.0.0"
+  },
+  "optionalDependencies": {
+    "sharp": "^0.32.6",
+    "canvas": "^2.11.2"
+  },
+  "bundledDependencies": [],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/your-username/pr-review-automation.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/pr-review-automation/issues",
+    "email": "support@example.com"
+  },
+  "homepage": "https://github.com/your-username/pr-review-automation#readme",
+  "funding": {
+    "type": "opencollective",
+    "url": "https://opencollective.com/pr-review-automation"
+  },
+  "config": {
+    "unsafe-perm": true
+  },
+  "lint-staged": {
+    "*.js": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{md,json,yml,yaml}": [
+      "prettier --write"
+    ]
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "lint-staged",
+      "pre-push": "npm run test:unit",
+      "commit-msg": "commitlint -E HUSKY_GIT_PARAMS"
+    }
+  },
+  "eslintConfig": {
+    "env": {
+      "node": true,
+      "es2022": true
+    },
+    "extends": [
+      "eslint:recommended"
+    ],
+    "parserOptions": {
+      "ecmaVersion": 2022,
+      "sourceType": "module"
+    },
+    "rules": {
+      "no-console": "off",
+      "no-unused-vars": "warn",
+      "prefer-const": "error",
+      "semi": ["error", "always"]
+    }
+  },
+  "prettier": {
+    "semi": true,
+    "singleQuote": true,
+    "tabWidth": 2,
+    "trailingComma": "es5",
+    "printWidth": 100,
+    "endOfLine": "lf"
+  },
+  "nyc": {
+    "include": [
+      "*.js",
+      "lib/**/*.js"
+    ],
+    "exclude": [
+      "test/**/*.js",
+      "coverage/**/*"
+    ],
+    "reporter": [
+      "text",
+      "html",
+      "lcov"
+    ],
+    "all": true,
+    "check-coverage": true,
+    "lines": 80,
+    "statements": 80,
+    "functions": 80,
+    "branches": 80
+  },
+  "mocha": {
+    "timeout": 30000,
+    "recursive": true,
+    "reporter": "spec",
+    "require": [
+      "./test/setup.js"
+    ]
+  },
+  "directories": {
+    "test": "test",
+    "doc": "docs",
+    "example": "examples"
+  },
+  "files": [
+    "*.js",
+    "lib/",
+    "bin/",
+    "config/",
+    "docs/",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "nodemonConfig": {
+    "watch": [
+      "*.js",
+      "lib/"
+    ],
+    "ext": "js,json",
+    "ignore": [
+      "test/",
+      "reports/",
+      "node_modules/"
+    ],
+    "exec": "node pr-reviewer-optimized.js"
+  },
+  "browserslist": [
+    "> 1%",
+    "last 2 versions",
+    "not dead"
+  ],
+  "private": false,
+  "preferGlobal": true,
+  "installConfig": {
+    "pnp": false
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "packageManager": "npm@9.0.0"
+}

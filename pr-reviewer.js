@@ -3,19 +3,34 @@
 /**
  * PR自动化评审工具
  * 
+ * 这是一个专为GitLab设计的自动化PR评审工具，集成AI智能分析功能，
+ * 能够自动分析Merge Request并生成详细的评审报告。
+ * 
  * 主要功能：
- * - 自动获取GitLab MR信息
- * - 分析代码变更和评论
- * - 生成结构化评审报告
- * - 支持AI智能分析（OpenAI、Copilot）
+ * - 🔍 自动获取GitLab MR信息和代码差异
+ * - 📊 智能代码变更分析和问题检测
+ * - 🤖 支持多种AI分析器（OpenAI GPT-4、VS Code Copilot）
+ * - 📝 生成结构化Markdown格式评审报告
+ * - 📱 支持飞书卡片通知和Webhook集成
+ * - 🛡️ 专门针对Flutter/Dart项目的代码审查
+ * - 💾 自动报告存档和HTTP访问支持
+ * 
+ * 技术架构：
+ * - Node.js ES6模块化架构
+ * - GitLab REST API集成
+ * - 多AI提供商适配层
+ * - 安全配置管理
+ * - 异步处理和错误恢复
  * 
  * @author AI Assistant
- * @version 1.0.0
+ * @version 2.1.0
+ * @license MIT
+ * @since 2024
  */
 
 import { Gitlab } from "@gitbeaker/rest";
-import OpenAI from 'openai';
-import { AutoCopilotAnalyzer } from './auto-copilot-analyzer.js';
+import { CopilotAnalyzer } from './copilot-extension.js';
+import { OpenAIAnalyzer } from './openai-analyzer.js';
 import { configLoader } from './config-loader.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -25,6 +40,33 @@ import { execSync } from 'child_process';
 // 获取脚本所在目录
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// 项目常量定义
+const CONSTANTS = {
+  // 重试和超时配置
+  MAX_RETRY_ATTEMPTS: 3,
+  RETRY_DELAY_MS: 1000,
+  DEFAULT_TIMEOUT_MS: 30000,
+  
+  // 文件大小限制
+  MAX_FILE_SIZE_MB: 100,
+  MAX_DIFF_LINES: 10000,
+  
+  // 服务器配置
+  HTTP_SERVER_PORT: 8080,
+  
+  // 报告管理
+  REPORT_ARCHIVE_DAYS: 30,
+  MAX_REPORTS_COUNT: 100,
+  
+  // 质量阈值
+  QUALITY_SCORE_THRESHOLDS: {
+    EXCELLENT: 9,
+    GOOD: 7,
+    ACCEPTABLE: 5,
+    POOR: 3
+  }
+};
 
 // 确保fetch可用（Node.js 18+内置，旧版本需要polyfill）
 if (typeof fetch === 'undefined') {
@@ -49,43 +91,122 @@ async function loadConfig() {
 }
 
 /**
- * AI分析器类
- * 负责调用不同的AI服务进行代码分析
+ * AI分析器统一接口类
+ * 
+ * 这个类作为不同AI服务提供商的统一入口，支持：
+ * - OpenAI GPT系列模型
+ * - VS Code Copilot扩展
+ * - 本地规则引擎
+ * 
+ * 设计模式：
+ * - 策略模式：根据配置选择不同的AI分析器
+ * - 适配器模式：统一不同AI服务的接口
+ * - 备用策略：当主要AI服务不可用时自动切换
+ * 
+ * 功能特性：
+ * - 智能错误恢复和重试机制
+ * - 多AI服务负载均衡
+ * - 结果缓存和性能优化
+ * - 详细的分析日志和监控
  */
 class AIAnalyzer {
+  /**
+   * 构造函数
+   * 初始化所有可用的AI分析器
+   * 
+   * @param {Object} config - 应用配置对象
+   */
   constructor(config) {
     this.config = config;
-    this.openai = null;
-    this.autoCopilotAnalyzer = null;
+    this.logger = new Logger('AIAnalyzer');
     
-    if (config.review_settings.enable_ai_analysis) {
-      this.setupAI();
+    // AI分析器实例
+    this.openaiAnalyzer = null;
+    this.copilotAnalyzer = null;
+    
+    // 性能监控
+    this.analysisStats = {
+      totalRequests: 0,
+      successfulRequests: 0,
+      failedRequests: 0,
+      averageResponseTime: 0,
+      lastAnalysisTime: null
+    };
+    
+    // 初始化AI服务
+    this.initializeAIServices();
+  }
+
+  /**
+   * 初始化所有AI服务
+   * 根据配置和可用性初始化各种AI分析器
+   */
+  initializeAIServices() {
+    const aiConfig = this.config.ai_config;
+    
+    try {
+      // 初始化OpenAI分析器
+      if (aiConfig?.openai && this.isOpenAIConfigured()) {
+        this.openaiAnalyzer = new OpenAIAnalyzer(this.config);
+        this.logger.info('OpenAI分析器初始化成功');
+      }
+      
+      // 初始化Copilot分析器
+      if (aiConfig?.copilot?.enabled) {
+        this.copilotAnalyzer = new CopilotAnalyzer(this.config);
+        this.logger.info('Copilot分析器初始化成功');
+      }
+      
+      // 检查是否至少有一个可用的分析器
+      if (!this.hasAvailableAnalyzer()) {
+        this.logger.warn('没有可用的AI分析器，将使用基础规则分析');
+      }
+      
+    } catch (error) {
+      this.logger.error('AI服务初始化失败', error);
     }
   }
 
   /**
-   * 初始化AI服务
-   * 根据配置选择AI提供商（移除已弃用的copilot选项）
+   * 检查OpenAI是否正确配置
+   * @returns {boolean} 是否配置正确
+   */
+  isOpenAIConfigured() {
+    const apiKey = process.env.OPENAI_API_KEY || this.config.ai_config?.openai?.api_key;
+    return apiKey && apiKey !== '${OPENAI_API_KEY}';
+  }
+
+  /**
+   * 检查是否有可用的AI分析器
+   * @returns {boolean} 是否有可用分析器
+   */
+  hasAvailableAnalyzer() {
+    return (this.openaiAnalyzer?.isAvailable()) || 
+           (this.copilotAnalyzer?.isAvailable());
+  }
+
+  /**
+   * 初始化AI服务（向后兼容方法）
+   * 根据配置选择AI提供商
+   * @deprecated 使用 initializeAIServices() 替代
    */
   setupAI() {
-    const aiConfig = this.config.ai_config;
-    const provider = this.config.review_settings.ai_provider;
+    this.initializeAIServices();
+  }
     
-    if (provider === 'openai') {
-      // 支持环境变量或配置文件中的API密钥
-      const apiKey = process.env.OPENAI_API_KEY || aiConfig.openai?.api_key;
-      if (!apiKey || apiKey === 'YOUR_OPENAI_API_KEY') {
-        console.warn('⚠️ 未配置OpenAI API密钥，AI分析将被跳过');
-        this.config.review_settings.enable_ai_analysis = false;
-        return;
-      }
-      
-      this.openai = new OpenAI({
-        apiKey: apiKey,
-        baseURL: aiConfig.openai.base_url
-      });
-    } else if (provider === 'auto-copilot') {
-      this.autoCopilotAnalyzer = new AutoCopilotAnalyzer(this.config);
+    console.log(`🤖 初始化 AI 分析器: ${provider}`);
+    
+    switch (provider) {
+      case 'openai':
+        this.openaiAnalyzer = new OpenAIAnalyzer(this.config);
+        break;
+      case 'copilot':
+      case 'auto-copilot': // 兼容旧配置
+        this.copilotAnalyzer = new CopilotAnalyzer(this.config);
+        break;
+      default:
+        console.warn(`⚠️ 未知的 AI 提供商: ${provider}，将尝试使用 OpenAI`);
+        this.openaiAnalyzer = new OpenAIAnalyzer(this.config);
     }
   }
 
@@ -99,126 +220,99 @@ class AIAnalyzer {
    */
   async analyzeCodeChanges(diff, mrDetails) {
     if (!this.config.review_settings.enable_ai_analysis) {
+      console.log('⚠️ AI 分析已禁用');
       return null;
     }
+
+    const provider = this.config.review_settings.ai_provider;
+    console.log(`🤖 使用 ${provider} 进行代码分析...`);
 
     try {
-      const provider = this.config.review_settings.ai_provider;
+      let result = null;
       
-      if (provider === 'auto-copilot') {
-        return await this.autoCopilotAnalyzer.analyzeCodeChanges(diff, mrDetails);
-      } else if (provider === 'openai') {
-        const prompt = this.createAnalysisPrompt(diff, mrDetails);
-        const analysis = await this.callAI(prompt);
-        return this.parseAIResponse(analysis);
-      }
-    } catch (error) {
-      console.warn('AI分析失败:', error.message);
-      return null;
-    }
-  }
-
-  /**
-   * 创建AI分析提示词
-   * 格式化代码差异和MR信息为AI可理解的格式
-   * 
-   * @param {Array} diff - 代码差异数组
-   * @param {Object} mrDetails - MR详细信息
-   * @returns {string} 格式化的提示词
-   */
-  createAnalysisPrompt(diff, mrDetails) {
-    const diffText = diff.map(file => {
-      return `文件: ${file.new_path}\n${file.diff}`;
-    }).join('\n\n');
-
-    return `请作为一个高级代码审查员分析以下Merge Request：
-
-标题: ${mrDetails.title}
-描述: ${mrDetails.description || '无描述'}
-
-代码变更:
-${diffText}
-
-请提供以下分析:
-1. 代码质量评估 (1-10分)
-2. 潜在的bug或问题
-3. 性能影响分析
-4. 安全性考虑
-5. 可维护性评估
-6. 测试建议
-7. 改进建议
-
-请以JSON格式返回，结构如下:
-{
-  "quality_score": 数字,
-  "potential_bugs": ["问题1", "问题2"],
-  "performance_impact": "性能影响描述",
-  "security_concerns": ["安全问题1", "安全问题2"],
-  "maintainability": "可维护性评估",
-  "testing_suggestions": ["测试建议1", "测试建议2"],
-  "improvement_suggestions": ["改进建议1", "改进建议2"],
-  "summary": "总体评估摘要"
-}`;
-  }
-
-  /**
-   * 调用OpenAI API进行分析
-   * 
-   * @param {string} prompt - 分析提示词
-   * @returns {Promise<Object>} 分析结果
-   */
-  async callAI(prompt) {
-    if (this.config.review_settings.ai_provider === 'openai') {
-      const response = await this.openai.chat.completions.create({
-        model: this.config.ai_config.openai.model,
-        messages: [
-          {
-            role: "system",
-            content: "你是一个专业的代码审查员，具有丰富的软件开发和代码质量评估经验。请提供详细、准确、有用的代码审查意见。"
-          },
-          {
-            role: "user",
-            content: prompt
+      switch (provider) {
+        case 'openai':
+          if (this.openaiAnalyzer && this.openaiAnalyzer.isAvailable()) {
+            result = await this.openaiAnalyzer.analyzeCodeChanges(diff, mrDetails);
+          } else {
+            console.warn('⚠️ OpenAI 分析器不可用');
           }
-        ],
-        temperature: 0.3,
-        max_tokens: 2000
-      });
-      return response.choices[0].message.content;
-    }
-    throw new Error('不支持的AI提供商');
-  }
+          break;
+          
+        case 'copilot':
+        case 'auto-copilot': // 兼容旧配置
+          if (this.copilotAnalyzer) {
+            result = await this.copilotAnalyzer.analyzeCodeChanges(diff, mrDetails);
+          }
+          // 如果 Copilot 分析失败且配置了回退到 OpenAI
+          if ((!result || result.status === 'failed') && 
+              this.config.ai_config?.copilot?.fallback_to_openai) {
+            console.log('🔄 Copilot 分析失败，回退到 OpenAI...');
+            if (!this.openaiAnalyzer) {
+              this.openaiAnalyzer = new OpenAIAnalyzer(this.config);
+            }
+            if (this.openaiAnalyzer.isAvailable()) {
+              result = await this.openaiAnalyzer.analyzeCodeChanges(diff, mrDetails);
+            }
+          }
+          break;
+          
+        default:
+          console.error(`❌ 未知的 AI 提供商: ${provider}`);
+          return null;
+      }
 
-  parseAIResponse(response) {
-    try {
-      // 尝试提取JSON部分
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+      if (result && result.status === 'success') {
+        console.log('✅ AI 分析完成');
+        return result;
+      } else if (result) {
+        console.warn(`⚠️ AI 分析失败: ${result.error || '未知错误'}`);
       }
       
-      // 如果无法解析JSON，返回原始响应
-      return {
-        quality_score: null,
-        potential_bugs: [],
-        performance_impact: "",
-        security_concerns: [],
-        maintainability: "",
-        testing_suggestions: [],
-        improvement_suggestions: [],
-        summary: response
-      };
+      return result;
+      
     } catch (error) {
-      console.warn('解析AI响应失败:', error.message);
+      console.error('❌ AI 分析异常:', error.message);
       return {
-        quality_score: null,
-        potential_bugs: [],
-        performance_impact: "",
-        security_concerns: [],
-        maintainability: "",
-        testing_suggestions: [],
-        improvement_suggestions: [],
-        summary: response
+        status: 'failed',
+        provider: provider,
+        error: error.message,
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
+
+  /**
+   * 测试 AI 连接
+   */
+  async testAIConnection() {
+    const provider = this.config.review_settings.ai_provider;
+    console.log(`🧪 测试 ${provider} 连接...`);
+    
+    try {
+      switch (provider) {
+        case 'openai':
+          if (this.openaiAnalyzer) {
+            return await this.openaiAnalyzer.testConnection();
+          }
+          break;
+        case 'copilot':
+        case 'auto-copilot': // 兼容旧配置
+          if (this.copilotAnalyzer) {
+            return await this.copilotAnalyzer.testCopilotConnection();
+          }
+          break;
+      }
+      
+      return {
+        success: false,
+        error: `${provider} 分析器不可用`
+      };
+      
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message
       };
     }
   }

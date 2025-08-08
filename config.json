@@ -18,13 +18,13 @@
     }
   },
   "review_settings": {
-    "max_files_warning": 50,
-    "max_lines_warning": 10000,
+    "max_files_warning": 20,
+    "max_lines_warning": 1000,
     "include_detailed_diff": true,
     "check_console_logs": true,
     "check_todos": true,
     "enable_ai_analysis": true,
-    "ai_provider": "auto-copilot",
+    "ai_provider": "copilot",
     "exclude_patterns": [
       "*.min.js",
       "*.min.css",
@@ -54,8 +54,28 @@
     "_comment": "AI模型配置说明请参考 AI_MODELS_GUIDE.md",
     "openai": {
       "api_key": "${OPENAI_API_KEY}",
-      "model": "gpt-4",
-      "base_url": "https://api.openai.com/v1"
+      "model": "gpt-4o",
+      "base_url": "https://api.openai.com/v1",
+      "max_tokens": 4000,
+      "temperature": 0.1,
+      "timeout": 60000
+    },
+    "copilot": {
+      "enabled": true,
+      "vscode_path": "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
+      "timeout": 30000,
+      "fallback_to_openai": true
+    },
+    "review_prompts": {
+      "system_prompt": "你是一个专业的代码审查专家，专注于Flutter/Dart、JavaScript/TypeScript、Java、Python等语言的代码质量分析。",
+      "analysis_focus": [
+        "代码质量和最佳实践",
+        "潜在的bug和逻辑错误", 
+        "安全漏洞和风险点",
+        "性能优化建议",
+        "代码可维护性和可读性",
+        "架构设计合理性"
+      ]
     }
   },
   "notification": {

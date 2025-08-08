@@ -1,0 +1,106 @@
+{
+  "msg_type": "interactive",
+  "card": {
+    "config": {
+      "wide_screen_mode": true,
+      "enable_forward": true
+    },
+    "header": {
+      "template": "blue",
+      "title": {
+        "content": "📋 ZM App - PR #174 评审完成",
+        "tag": "plain_text"
+      }
+    },
+    "elements": [
+      {
+        "tag": "div",
+        "text": {
+          "content": "**🎯 部分UI调整**\n👤 **提交者**: zhanghongxin2\n🌿 **分支**: `wxz/模型库` → `feat_V0.2.1`\n⏰ **时间**: 2025/8/6 11:04:51",
+          "tag": "lark_md"
+        }
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "div",
+        "fields": [
+          {
+            "is_short": true,
+            "text": {
+              "content": "**📁 文件数量**\n7 🟢 合理",
+              "tag": "lark_md"
+            }
+          },
+          {
+            "is_short": true,
+            "text": {
+              "content": "**📊 代码变更**\n+166/-153 🟢 正常范围",
+              "tag": "lark_md"
+            }
+          }
+        ]
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "div",
+        "text": {
+          "content": "**✅ 代码质量良好**\n未发现明显问题，建议批准合并",
+          "tag": "lark_md"
+        }
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "action",
+        "actions": [
+          {
+            "tag": "button",
+            "text": {
+              "content": "查看 MR",
+              "tag": "plain_text"
+            },
+            "type": "primary",
+            "url": "https://git.dreame.tech/fdm_printer/zm_app/-/merge_requests/174"
+          },
+          {
+            "tag": "button",
+            "text": {
+              "content": "📄 下载报告",
+              "tag": "plain_text"
+            },
+            "type": "default",
+            "url": "http://172.27.53.1:8899/reports/review_git_174.txt"
+          }
+        ]
+      },
+      {
+        "tag": "action",
+        "actions": [
+          {
+            "tag": "button",
+            "text": {
+              "content": "Jenkins 构建",
+              "tag": "plain_text"
+            },
+            "type": "default",
+            "url": "http://jenkins.atomverse.com.cn:8080/job/APP_revicew/43/console"
+          },
+          {
+            "tag": "button",
+            "text": {
+              "content": "🌐 PR 查看",
+              "tag": "plain_text"
+            },
+            "type": "default",
+            "url": "https://git.dreame.tech/fdm_printer/zm_app/-/merge_requests/174"
+          }
+        ]
+      }
+    ]
+  }
+}
