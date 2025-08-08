@@ -35,14 +35,17 @@ class AliyunBailianAnalyzer {
     this.bailianConfig = this.getBailianConfig();
     this.isConfigured = this.checkConfiguration();
     
-    // 分析缓存
+    // 分析缓存配置
     this.analysisCache = new Map();
-    this.maxCacheSize = 100;
+    this.maxCacheSize = this.bailianConfig.max_cache_size || 100;
+    this.cacheExpireTime = this.bailianConfig.cache_expire_time || 3600000; // 1小时
     
-    // 请求限制
+    // 请求控制配置
     this.requestQueue = [];
     this.processing = false;
-    this.maxConcurrent = 3;
+    this.maxConcurrent = this.bailianConfig.max_concurrent || 5; // 提高并发数
+    this.retryAttempts = this.bailianConfig.retry_attempts || 3;
+    this.retryDelay = this.bailianConfig.retry_delay || 1000;
   }
 
   /**
@@ -63,9 +66,24 @@ class AliyunBailianAnalyzer {
       workspace_id: envConfig.workspace_id || configFile.workspace_id,
       model: envConfig.model || configFile.model || 'qwen-max',
       base_url: envConfig.base_url || configFile.base_url || 'https://dashscope.aliyuncs.com/api/v1',
-      timeout: configFile.timeout || 30000,
-      max_tokens: configFile.max_tokens || 4000,
-      temperature: configFile.temperature || 0.1
+      
+      // 性能优化配置
+      timeout: configFile.timeout || 45000,  // 增加到45秒，处理复杂分析
+      max_tokens: configFile.max_tokens || 8000,  // 增加到8000，获得更详细分析
+      temperature: configFile.temperature || 0.2,  // 提高创造性，更好的建议
+      
+      // 缓存配置
+      max_cache_size: configFile.max_cache_size || 100,
+      cache_expire_time: configFile.cache_expire_time || 3600000, // 1小时
+      
+      // 并发控制
+      max_concurrent: configFile.max_concurrent || 5,
+      retry_attempts: configFile.retry_attempts || 3,
+      retry_delay: configFile.retry_delay || 1000,
+      
+      // 分块处理配置
+      max_chunk_size: configFile.max_chunk_size || 8,  // 减少分块大小，提高处理速度
+      max_diff_length: configFile.max_diff_length || 15000  // 单个diff最大长度
     };
   }
 
@@ -102,16 +120,20 @@ class AliyunBailianAnalyzer {
       // 生成缓存键
       const cacheKey = this.generateCacheKey(diff, mrDetails);
       
-      // 检查缓存
-      if (this.analysisCache.has(cacheKey)) {
+      // 检查缓存（使用新的缓存机制）
+      const cachedResult = this.getCachedResult(cacheKey);
+      if (cachedResult) {
         console.log('📋 使用缓存的分析结果');
-        return this.analysisCache.get(cacheKey);
+        return cachedResult;
       }
 
-      // 构建分析请求
-      const analysisResult = await this.performAnalysis(diff, mrDetails);
+      // 预处理：过滤和优化diff
+      const optimizedDiff = this.preprocessDiff(diff);
       
-      // 缓存结果
+      // 构建分析请求
+      const analysisResult = await this.performAnalysis(optimizedDiff, mrDetails);
+      
+      // 缓存结果（使用新的缓存机制）
       this.cacheAnalysisResult(cacheKey, analysisResult);
       
       return analysisResult;
@@ -161,9 +183,9 @@ class AliyunBailianAnalyzer {
   }
 
   /**
-   * 调用阿里云百炼API
+   * 调用阿里云百炼API（带重试机制）
    */
-  async callBailianAPI(prompt) {
+  async callBailianAPI(prompt, attempt = 1) {
     const { api_key, model, base_url, max_tokens, temperature, timeout } = this.bailianConfig;
     
     const requestBody = {
@@ -183,7 +205,10 @@ class AliyunBailianAnalyzer {
       parameters: {
         max_tokens: max_tokens,
         temperature: temperature,
-        result_format: 'message'
+        result_format: 'message',
+        // 优化参数
+        top_p: 0.8,  // 核采样参数，提高输出质量
+        repetition_penalty: 1.05  // 减少重复
       }
     };
 
@@ -192,6 +217,8 @@ class AliyunBailianAnalyzer {
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     try {
+      console.log(`🔄 调用阿里云百炼API (尝试 ${attempt}/${this.retryAttempts})`);
+      
       const response = await fetch(`${base_url}/services/aigc/text-generation/generation`, {
         method: 'POST',
         headers: {
@@ -207,21 +234,30 @@ class AliyunBailianAnalyzer {
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`阿里云百炼API调用失败: ${response.status} - ${errorText}`);
+        throw new Error(`API调用失败: ${response.status} - ${errorText}`);
       }
 
       const result = await response.json();
       
       if (result.code && result.code !== '200') {
-        throw new Error(`阿里云百炼API错误: ${result.code} - ${result.message}`);
+        throw new Error(`API错误: ${result.code} - ${result.message}`);
       }
       
+      console.log('✅ 阿里云百炼API调用成功');
       return this.parseAPIResponse(result);
+      
     } catch (error) {
       clearTimeout(timeoutId);
       
       if (error.name === 'AbortError') {
-        throw new Error(`阿里云百炼API调用超时 (${timeout}ms)`);
+        throw new Error(`API调用超时 (${timeout}ms)`);
+      }
+      
+      // 重试逻辑
+      if (attempt < this.retryAttempts && this.shouldRetry(error)) {
+        console.warn(`⚠️ API调用失败，${this.retryDelay}ms后重试: ${error.message}`);
+        await this.delay(this.retryDelay * attempt); // 指数退避
+        return this.callBailianAPI(prompt, attempt + 1);
       }
       
       throw error;
@@ -229,18 +265,27 @@ class AliyunBailianAnalyzer {
   }
 
   /**
-   * 构建系统提示词
+   * 构建系统提示词（优化版）
    */
   getSystemPrompt() {
-    return `你是一个专业的代码审查专家，具有丰富的软件开发和代码质量评估经验。你的职责是：
+    return `你是一个资深的代码审查专家，拥有10年以上的软件开发和代码质量评估经验。你精通多种编程语言和框架，善于发现潜在问题并提供实用的改进建议。
 
-1. 深入分析代码变更的质量和安全性
-2. 识别潜在的bug、性能问题和安全漏洞
-3. 提供具体、可执行的改进建议
-4. 评估代码的可维护性和可读性
-5. 检查是否遵循最佳实践和编码规范
+🎯 **核心职责：**
+1. 深度分析代码变更的技术质量和业务逻辑
+2. 精准识别bug、性能瓶颈、安全漏洞和设计缺陷
+3. 提供具体、可执行、优先级明确的改进方案
+4. 评估代码的可维护性、可扩展性和团队协作友好度
+5. 确保代码符合行业最佳实践和团队规范
 
-请用中文回复，提供详细且专业的分析报告。`;
+💡 **分析原则：**
+- 优先关注功能正确性和安全性问题
+- 平衡代码质量和开发效率
+- 提供建设性而非批评性的反馈
+- 考虑代码的上下文和业务场景
+- 识别重构机会和技术债务
+
+📋 **输出要求：**
+请用专业、简洁的中文回复，避免冗长的理论阐述，专注于实际可执行的建议。`;
   }
 
   /**
@@ -324,16 +369,54 @@ ${diffText}
   }
 
   /**
-   * 分割大型差异
+   * 分割大型差异（优化版）
    */
   chunkDiff(diff) {
-    const maxChunkSize = 10; // 每块最多10个文件
+    const maxChunkSize = this.bailianConfig.max_chunk_size || 8;
+    const maxDiffLength = this.bailianConfig.max_diff_length || 15000;
     const chunks = [];
     
-    for (let i = 0; i < diff.length; i += maxChunkSize) {
-      chunks.push(diff.slice(i, i + maxChunkSize));
+    let currentChunk = [];
+    let currentLength = 0;
+    
+    for (const file of diff) {
+      const fileDiffLength = (file.diff || '').length;
+      
+      // 如果单个文件太大，截断处理
+      if (fileDiffLength > maxDiffLength) {
+        const truncatedFile = {
+          ...file,
+          diff: file.diff.substring(0, maxDiffLength) + '\n... (文件过大，已截断)'
+        };
+        
+        // 大文件单独成块
+        if (currentChunk.length > 0) {
+          chunks.push(currentChunk);
+          currentChunk = [];
+          currentLength = 0;
+        }
+        chunks.push([truncatedFile]);
+        continue;
+      }
+      
+      // 检查是否需要新建块
+      if (currentChunk.length >= maxChunkSize || 
+          (currentLength + fileDiffLength > maxDiffLength && currentChunk.length > 0)) {
+        chunks.push(currentChunk);
+        currentChunk = [];
+        currentLength = 0;
+      }
+      
+      currentChunk.push(file);
+      currentLength += fileDiffLength;
     }
     
+    // 添加最后一个块
+    if (currentChunk.length > 0) {
+      chunks.push(currentChunk);
+    }
+    
+    console.log(`📊 代码分块: ${diff.length} 个文件分为 ${chunks.length} 个块进行分析`);
     return chunks;
   }
 
@@ -494,16 +577,132 @@ ${diffText}
   }
 
   /**
-   * 缓存分析结果
+   * 缓存分析结果（优化版）
    */
   cacheAnalysisResult(key, result) {
+    // 清理过期缓存
+    this.cleanExpiredCache();
+    
     // 限制缓存大小
     if (this.analysisCache.size >= this.maxCacheSize) {
-      const firstKey = this.analysisCache.keys().next().value;
-      this.analysisCache.delete(firstKey);
+      // 删除最旧的缓存项
+      const oldestKey = this.analysisCache.keys().next().value;
+      this.analysisCache.delete(oldestKey);
     }
     
-    this.analysisCache.set(key, result);
+    // 添加时间戳
+    const cacheItem = {
+      result,
+      timestamp: Date.now(),
+      expires: Date.now() + this.cacheExpireTime
+    };
+    
+    this.analysisCache.set(key, cacheItem);
+    console.log(`💾 缓存分析结果 (缓存大小: ${this.analysisCache.size}/${this.maxCacheSize})`);
+  }
+
+  /**
+   * 获取缓存的分析结果
+   */
+  getCachedResult(key) {
+    const cacheItem = this.analysisCache.get(key);
+    if (!cacheItem) return null;
+    
+    // 检查是否过期
+    if (Date.now() > cacheItem.expires) {
+      this.analysisCache.delete(key);
+      return null;
+    }
+    
+    return cacheItem.result;
+  }
+
+  /**
+   * 清理过期缓存
+   */
+  cleanExpiredCache() {
+    const now = Date.now();
+    const keysToDelete = [];
+    
+    for (const [key, item] of this.analysisCache.entries()) {
+      if (now > item.expires) {
+        keysToDelete.push(key);
+      }
+    }
+    
+    keysToDelete.forEach(key => this.analysisCache.delete(key));
+    
+    if (keysToDelete.length > 0) {
+      console.log(`🗑️ 清理 ${keysToDelete.length} 个过期缓存项`);
+    }
+  }
+
+  /**
+   * 判断是否应该重试
+   */
+  shouldRetry(error) {
+    const retryableErrors = [
+      'ECONNRESET',
+      'ENOTFOUND', 
+      'ECONNREFUSED',
+      'ETIMEDOUT',
+      '429', // 限流
+      '500', // 服务器错误
+      '502', // 网关错误
+      '503', // 服务不可用
+      '504'  // 网关超时
+    ];
+    
+    return retryableErrors.some(pattern => 
+      error.message.includes(pattern) || error.code === pattern
+    );
+  }
+
+  /**
+   * 预处理diff，过滤无关文件和优化内容
+   */
+  preprocessDiff(diff) {
+    const ignoredExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.pdf', '.zip', '.tar', '.gz'];
+    const ignoredPaths = ['/node_modules/', '/vendor/', '/.git/', '/dist/', '/build/', '/coverage/'];
+    
+    return diff.filter(file => {
+      const filePath = file.new_path || file.old_path || '';
+      
+      // 跳过二进制文件
+      if (ignoredExtensions.some(ext => filePath.toLowerCase().endsWith(ext))) {
+        return false;
+      }
+      
+      // 跳过不重要的目录
+      if (ignoredPaths.some(path => filePath.includes(path))) {
+        return false;
+      }
+      
+      // 跳过空的diff
+      if (!file.diff || file.diff.trim().length === 0) {
+        return false;
+      }
+      
+      return true;
+    }).map(file => {
+      // 优化diff内容，移除过长的连续空行
+      const optimizedDiff = file.diff
+        .replace(/\n\s*\n\s*\n/g, '\n\n')  // 压缩多个空行
+        .replace(/^.*\/\/ TODO.*$/gm, '')   // 移除TODO注释
+        .replace(/^.*\/\* DEBUG.*?\*\//gm, ''); // 移除DEBUG注释
+      
+      return {
+        ...file,
+        diff: optimizedDiff
+      };
+    });
+  }
+
+  /**
+   * 延时工具方法
+   */
+  delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /**
@@ -548,15 +747,49 @@ ${diffText}
   }
 
   /**
-   * 获取配置信息
+   * 获取配置信息（增强版）
    */
   getConfigInfo() {
     return {
       provider: 'aliyun-bailian',
       model: this.bailianConfig.model,
       configured: this.isConfigured,
-      base_url: this.bailianConfig.base_url
+      base_url: this.bailianConfig.base_url,
+      performance: {
+        timeout: this.bailianConfig.timeout,
+        max_tokens: this.bailianConfig.max_tokens,
+        max_concurrent: this.bailianConfig.max_concurrent,
+        retry_attempts: this.bailianConfig.retry_attempts,
+        cache_size: this.analysisCache.size,
+        max_cache_size: this.maxCacheSize
+      }
     };
+  }
+
+  /**
+   * 获取性能统计
+   */
+  getPerformanceStats() {
+    const cacheHitRate = this.totalRequests > 0 
+      ? ((this.cacheHits || 0) / this.totalRequests * 100).toFixed(2)
+      : '0.00';
+    
+    return {
+      cache_hit_rate: `${cacheHitRate}%`,
+      cache_size: this.analysisCache.size,
+      total_requests: this.totalRequests || 0,
+      cache_hits: this.cacheHits || 0,
+      avg_response_time: this.avgResponseTime || 0
+    };
+  }
+
+  /**
+   * 清理所有缓存
+   */
+  clearCache() {
+    const oldSize = this.analysisCache.size;
+    this.analysisCache.clear();
+    console.log(`🗑️ 清理所有缓存，释放 ${oldSize} 个缓存项`);
   }
 }
 
