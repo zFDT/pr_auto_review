@@ -913,7 +913,10 @@ class PRReviewer {
     
     // 生成AI分析结果
     if (aiAnalysis) {
-      report += this.generateAIAnalysisSection(aiAnalysis);
+      this.logger.debug('生成AI分析报告', { hasAnalysis: !!aiAnalysis.analysis, analysisKeys: aiAnalysis.analysis ? Object.keys(aiAnalysis.analysis) : [] });
+      report += this.generateAIAnalysisSection(aiAnalysis.analysis || aiAnalysis);
+    } else {
+      this.logger.debug('AI分析结果为空，跳过');
     }
     
     // 生成Review建议
@@ -1387,6 +1390,12 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
           aiAnalysis = await this.aiAnalyzer.analyzeCodeChanges(diff, mrDetails);
           if (aiAnalysis) {
             this.logger.info('AI分析完成');
+            this.logger.debug('AI分析结果结构:', { 
+              status: aiAnalysis.status, 
+              provider: aiAnalysis.provider,
+              hasAnalysis: !!aiAnalysis.analysis,
+              analysisKeys: aiAnalysis.analysis ? Object.keys(aiAnalysis.analysis) : []
+            });
           } else {
             this.logger.info('AI分析跳过');
           }

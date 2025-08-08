@@ -145,7 +145,16 @@ class AliyunBailianAnalyzer {
       status: 'success',
       provider: 'aliyun-bailian',
       model: this.bailianConfig.model,
-      analysis: mergedAnalysis,
+      analysis: {
+        summary: mergedAnalysis.summary,
+        quality_score: mergedAnalysis.score,
+        risk_level: mergedAnalysis.risk_level,
+        potential_issues: mergedAnalysis.issues || [],
+        security_concerns: mergedAnalysis.security_notes || [],
+        improvement_suggestions: mergedAnalysis.suggestions || [],
+        strengths: mergedAnalysis.strengths || [],
+        raw_response: mergedAnalysis.raw_response
+      },
       timestamp: new Date().toISOString(),
       chunks_analyzed: analyses.length
     };
