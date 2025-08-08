@@ -1,0 +1,127 @@
+{
+  "msg_type": "interactive",
+  "card": {
+    "config": {
+      "wide_screen_mode": true,
+      "enable_forward": true
+    },
+    "header": {
+      "template": "yellow",
+      "title": {
+        "content": "📋 ZM App - PR #176 评审完成",
+        "tag": "plain_text"
+      }
+    },
+    "elements": [
+      {
+        "tag": "div",
+        "text": {
+          "content": "**🎯 Zhx/zhx v0.2.1**\n👤 **提交者**: zhanghongxin2\n🌿 **分支**: `zhx/zhx_V0.2.1` → `feat_V0.2.1`\n⏰ **时间**: 2025/8/8 15:46:41",
+          "tag": "lark_md"
+        }
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "div",
+        "fields": [
+          {
+            "is_short": true,
+            "text": {
+              "content": "**📁 文件数量**\n24 🔴 较多",
+              "tag": "lark_md"
+            }
+          },
+          {
+            "is_short": true,
+            "text": {
+              "content": "**📊 代码变更**\n+596/-222 🟢 正常范围",
+              "tag": "lark_md"
+            }
+          }
+        ]
+      },
+      {
+        "tag": "div",
+        "text": {
+          "content": "**🤖 AI评分**: 🟡 7.5/10",
+          "tag": "lark_md"
+        }
+      },
+      {
+        "tag": "div",
+        "text": {
+          "content": "**📋 评估总结**\n共分析 3 个代码块，发现 33 个问题，33 条建议。总体评分 7.5/10，风险等级：medium",
+          "tag": "lark_md"
+        }
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "div",
+        "text": {
+          "content": "**⚠️ 主要问题**\n• lib/bean/mqtt/request/mqtt_request_color_box_fil_feed_set_bean.dart: 包含 1 个待完成标记 (TODO)\n• lib/bean/mqtt/response/mqtt_color_box_info_bean.dart: 包含空的catch块，建议添加错误处理\n• - `mqtt_request_color_box_slot_info_bean.dart`文件中的`MqttRequestColorBoxSlotInfoBean`类重构后，缺少了对`boxId`和`slots`的直接访问，可能会导致其他地方的代码需要修改。\n• - `mqtt_request_start_paint_bean.dart`文件中删除了`AmsSetting`类，但没有提供迁移指南或注释说明，可能会导致其他依赖该类的地方出现问题。\n• - `mqtt_devices_controller.dart`文件中，`mqttColorBoxInfoBean`从`RxList`改为`RxMap`，但没有提供详细的迁移指南或注释说明，可能会导致其他地方的代码需要修改。",
+          "tag": "lark_md"
+        }
+      },
+      {
+        "tag": "div",
+        "text": {
+          "content": "**💡 改进建议**\n• - 在`mqtt_request_color_box_slot_info_bean.dart`文件中，为`MqttRequestColorBoxSlotInfoBean`类添加详细的注释，说明重构的原因和影响。\n• - 在`mqtt_request_start_paint_bean.dart`文件中，为删除`AmsSetting`类的操作添加详细的注释，说明迁移指南。\n• - 在`mqtt_devices_controller.dart`文件中，为`mqttColorBoxInfoBean`从`RxList`改为`RxMap`的操作添加详细的注释，说明迁移指南。",
+          "tag": "lark_md"
+        }
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "action",
+        "actions": [
+          {
+            "tag": "button",
+            "text": {
+              "content": "查看 MR",
+              "tag": "plain_text"
+            },
+            "type": "primary",
+            "url": "https://git.dreame.tech/fdm_printer/zm_app/-/merge_requests/176"
+          },
+          {
+            "tag": "button",
+            "text": {
+              "content": "📄 下载报告",
+              "tag": "plain_text"
+            },
+            "type": "default",
+            "url": "http://localhost:8899/reports/review_git_176.txt"
+          }
+        ]
+      },
+      {
+        "tag": "action",
+        "actions": [
+          {
+            "tag": "button",
+            "text": {
+              "content": "Jenkins 构建",
+              "tag": "plain_text"
+            },
+            "type": "default",
+            "url": "http://jenkins.atomverse.com.cn:8080/job/APP_revicew/latest/console"
+          },
+          {
+            "tag": "button",
+            "text": {
+              "content": "🌐 PR 查看",
+              "tag": "plain_text"
+            },
+            "type": "default",
+            "url": "https://git.dreame.tech/fdm_printer/zm_app/-/merge_requests/176"
+          }
+        ]
+      }
+    ]
+  }
+}

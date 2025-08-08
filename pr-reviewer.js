@@ -31,7 +31,6 @@
 import { Gitlab } from "@gitbeaker/rest";
 import { CopilotAnalyzer } from './copilot-extension.js';
 import { OpenAIAnalyzer } from './openai-analyzer.js';
-import { FreeAIAnalyzer } from './free-ai-analyzer.js';
 import { AliyunBailianAnalyzer } from './aliyun-bailian-analyzer.js';
 import { configLoader } from './config-loader.js';
 import fs from 'fs/promises';
@@ -55,7 +54,7 @@ const CONSTANTS = {
   MAX_DIFF_LINES: 10000,
   
   // 服务器配置
-  HTTP_SERVER_PORT: 8080,
+  HTTP_SERVER_PORT: 8899,
   
   // 报告管理
   REPORT_ARCHIVE_DAYS: 30,
@@ -190,7 +189,7 @@ class AIAnalyzer {
     // AI分析器实例
     this.openaiAnalyzer = null;
     this.copilotAnalyzer = null;
-    this.freeAIAnalyzer = null;
+    this.aliyunBailianAnalyzer = null;
     
     // 性能监控
     this.analysisStats = {
@@ -231,12 +230,6 @@ class AIAnalyzer {
         this.logger.info('Copilot分析器初始化成功');
       }
       
-      // 初始化免费AI分析器 (优先选择)
-      if (aiConfig?.free_ai?.enabled !== false) {
-        this.freeAIAnalyzer = new FreeAIAnalyzer(this.config);
-        this.logger.info('免费AI分析器初始化成功');
-      }
-      
       // 检查是否至少有一个可用的分析器
       if (!this.hasAvailableAnalyzer()) {
         this.logger.warn('没有可用的AI分析器，将使用基础规则分析');
@@ -273,8 +266,7 @@ class AIAnalyzer {
    * @returns {boolean} 是否有可用分析器
    */
   hasAvailableAnalyzer() {
-    return (this.freeAIAnalyzer?.isAvailable()) ||
-           (this.aliyunBailianAnalyzer?.isAvailable()) ||
+    return (this.aliyunBailianAnalyzer?.isAvailable()) ||
            (this.openaiAnalyzer?.isAvailable()) || 
            (this.copilotAnalyzer?.isAvailable());
   }
@@ -299,43 +291,35 @@ class AIAnalyzer {
     this.analysisStats.totalRequests++;
 
     try {
-      const provider = this.config.review_settings.ai_provider || 'free';
+      const provider = this.config.review_settings.ai_provider || 'aliyun_bailian';
       this.logger.info(`开始使用 ${provider} 进行代码分析`);
 
       let analysisResult = null;
 
-      // 根据配置选择分析器，优先使用免费AI
+      // 根据配置选择分析器
       switch (provider) {
-        case 'free':
-        case 'auto':
-          // 优先使用免费AI分析器
-          if (this.freeAIAnalyzer?.isAvailable()) {
-            analysisResult = await this.freeAIAnalyzer.analyzeCodeChanges(diff, mrDetails);
-          } else if (this.aliyunBailianAnalyzer?.isAvailable()) {
-            analysisResult = await this.aliyunBailianAnalyzer.analyzeCodeChanges(diff, mrDetails);
-          } else if (this.openaiAnalyzer?.isAvailable()) {
-            analysisResult = await this.openaiAnalyzer.analyzeCodeChanges(diff, mrDetails);
-          } else if (this.copilotAnalyzer?.isAvailable()) {
-            analysisResult = await this.copilotAnalyzer.analyzeCodeChanges(diff, mrDetails);
-          }
-          break;
-          
         case 'aliyun_bailian':
         case 'bailian':
           if (this.aliyunBailianAnalyzer?.isAvailable()) {
             analysisResult = await this.aliyunBailianAnalyzer.analyzeCodeChanges(diff, mrDetails);
-          } else {
-            this.logger.warn('阿里云百炼分析器不可用，回退到免费AI');
-            analysisResult = await this.freeAIAnalyzer?.analyzeCodeChanges(diff, mrDetails);
+          } else if (this.openaiAnalyzer?.isAvailable()) {
+            this.logger.warn('阿里云百炼分析器不可用，回退到OpenAI');
+            analysisResult = await this.openaiAnalyzer.analyzeCodeChanges(diff, mrDetails);
+          } else if (this.copilotAnalyzer?.isAvailable()) {
+            this.logger.warn('阿里云百炼分析器不可用，回退到Copilot');
+            analysisResult = await this.copilotAnalyzer.analyzeCodeChanges(diff, mrDetails);
           }
           break;
           
         case 'openai':
           if (this.openaiAnalyzer?.isAvailable()) {
             analysisResult = await this.openaiAnalyzer.analyzeCodeChanges(diff, mrDetails);
-          } else {
-            this.logger.warn('OpenAI分析器不可用，回退到免费AI');
-            analysisResult = await this.freeAIAnalyzer?.analyzeCodeChanges(diff, mrDetails);
+          } else if (this.aliyunBailianAnalyzer?.isAvailable()) {
+            this.logger.warn('OpenAI分析器不可用，回退到阿里云百炼');
+            analysisResult = await this.aliyunBailianAnalyzer.analyzeCodeChanges(diff, mrDetails);
+          } else if (this.copilotAnalyzer?.isAvailable()) {
+            this.logger.warn('OpenAI分析器不可用，回退到Copilot');
+            analysisResult = await this.copilotAnalyzer.analyzeCodeChanges(diff, mrDetails);
           }
           break;
 
@@ -343,22 +327,37 @@ class AIAnalyzer {
         case 'auto-copilot':
           if (this.copilotAnalyzer?.isAvailable()) {
             analysisResult = await this.copilotAnalyzer.analyzeCodeChanges(diff, mrDetails);
-          } else {
-            this.logger.warn('Copilot分析器不可用，回退到免费AI');
-            analysisResult = await this.freeAIAnalyzer?.analyzeCodeChanges(diff, mrDetails);
+          } else if (this.aliyunBailianAnalyzer?.isAvailable()) {
+            this.logger.warn('Copilot分析器不可用，回退到阿里云百炼');
+            analysisResult = await this.aliyunBailianAnalyzer.analyzeCodeChanges(diff, mrDetails);
+          } else if (this.openaiAnalyzer?.isAvailable()) {
+            this.logger.warn('Copilot分析器不可用，回退到OpenAI');
+            analysisResult = await this.openaiAnalyzer.analyzeCodeChanges(diff, mrDetails);
           }
           break;
 
+        case 'auto':
         default:
-          this.logger.warn(`未知的AI提供商: ${provider}，使用免费AI分析器`);
-          analysisResult = await this.freeAIAnalyzer?.analyzeCodeChanges(diff, mrDetails);
+          // 自动选择：优先阿里云百炼，然后OpenAI，最后Copilot
+          if (this.aliyunBailianAnalyzer?.isAvailable()) {
+            analysisResult = await this.aliyunBailianAnalyzer.analyzeCodeChanges(diff, mrDetails);
+          } else if (this.openaiAnalyzer?.isAvailable()) {
+            analysisResult = await this.openaiAnalyzer.analyzeCodeChanges(diff, mrDetails);
+          } else if (this.copilotAnalyzer?.isAvailable()) {
+            analysisResult = await this.copilotAnalyzer.analyzeCodeChanges(diff, mrDetails);
+          } else {
+            this.logger.warn(`未知的AI提供商: ${provider}，且无可用分析器`);
+            return null;
+          }
       }
 
       // 记录性能统计
       const duration = Date.now() - startTime;
       this.updateAnalysisStats(duration, true);
 
-      return analysisResult;
+      // 标准化AI分析结果
+      const normalizedResult = this.normalizeAIAnalysisResult(analysisResult);
+      return normalizedResult;
 
     } catch (error) {
       this.logger.error('AI分析失败', error);
@@ -408,6 +407,53 @@ class AIAnalyzer {
     }
     
     return null;
+  }
+
+  /**
+   * 标准化AI分析结果
+   * 处理不同AI分析器返回格式的差异，确保一致的数据结构
+   * @private
+   * @param {Object} rawResult - 原始AI分析结果
+   * @returns {Object} 标准化后的分析结果
+   */
+  normalizeAIAnalysisResult(rawResult) {
+    if (!rawResult) {
+      return null;
+    }
+
+    // 如果结果包含analysis字段（如阿里云百炼），提取analysis内容
+    if (rawResult.analysis && typeof rawResult.analysis === 'object') {
+      return {
+        ...rawResult.analysis,
+        provider: rawResult.provider || 'unknown',
+        status: rawResult.status || 'success',
+        timestamp: rawResult.timestamp
+      };
+    }
+
+    // 如果是直接的分析数据（如OpenAI），直接返回
+    if (rawResult.quality_score !== undefined || rawResult.potential_issues !== undefined) {
+      return rawResult;
+    }
+
+    // 如果有status和provider但没有analysis字段，可能是错误或其他格式
+    if (rawResult.status) {
+      return {
+        quality_score: null,
+        potential_issues: [`${rawResult.provider || 'AI'}分析失败: ${rawResult.error || '未知错误'}`],
+        security_concerns: [],
+        performance_impact: '无法进行AI性能分析',
+        maintainability: '无法进行AI可维护性分析',
+        testing_suggestions: ['建议进行人工代码审查'],
+        improvement_suggestions: ['建议检查AI服务配置'],
+        summary: `${rawResult.provider || 'AI'}分析不可用`,
+        provider: rawResult.provider || 'unknown',
+        status: rawResult.status
+      };
+    }
+
+    // 兜底处理
+    return rawResult;
   }
 
   /**
@@ -913,8 +959,24 @@ class PRReviewer {
     
     // 生成AI分析结果
     if (aiAnalysis) {
-      this.logger.debug('生成AI分析报告', { hasAnalysis: !!aiAnalysis.analysis, analysisKeys: aiAnalysis.analysis ? Object.keys(aiAnalysis.analysis) : [] });
-      report += this.generateAIAnalysisSection(aiAnalysis.analysis || aiAnalysis);
+      // 处理不同AI分析器返回的数据结构
+      let actualAnalysisData = aiAnalysis;
+      
+      // 如果是嵌套结构（免费AI分析器返回格式），提取analysis字段
+      if (aiAnalysis.analysis && typeof aiAnalysis.analysis === 'object') {
+        actualAnalysisData = aiAnalysis.analysis;
+        this.logger.debug('使用嵌套分析数据', { 
+          provider: aiAnalysis.provider, 
+          status: aiAnalysis.status,
+          analysisKeys: Object.keys(actualAnalysisData) 
+        });
+      } else {
+        this.logger.debug('使用直接分析数据', { 
+          analysisKeys: Object.keys(actualAnalysisData) 
+        });
+      }
+      
+      report += this.generateAIAnalysisSection(actualAnalysisData);
     } else {
       this.logger.debug('AI分析结果为空，跳过');
     }
@@ -1145,6 +1207,15 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
   generateReviewSuggestions(analysis, aiAnalysis) {
     let section = `## 🎯 Review建议\n\n`;
 
+    // 处理AI分析数据结构
+    let actualAnalysisData = null;
+    if (aiAnalysis) {
+      // 如果是嵌套结构（免费AI分析器返回格式），提取analysis字段
+      actualAnalysisData = aiAnalysis.analysis && typeof aiAnalysis.analysis === 'object' 
+        ? aiAnalysis.analysis 
+        : aiAnalysis;
+    }
+
     // 基于分析结果的建议
     if (analysis.addedLines > 1000) {
       section += `- ⚠️ 这是一个较大的PR (${analysis.addedLines}行新增)，建议拆分成更小的PR\n`;
@@ -1154,7 +1225,7 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
       section += `- ⚠️ 修改文件较多 (${analysis.totalFiles}个)，请确保每个文件的修改都是必要的\n`;
     }
     
-    if (analysis.potentialIssues.length === 0 && (!aiAnalysis || aiAnalysis.quality_score >= 7)) {
+    if (analysis.potentialIssues.length === 0 && (!actualAnalysisData || actualAnalysisData.quality_score >= 7)) {
       section += `- ✅ 代码质量良好，未发现明显问题\n`;
     }
     
@@ -1340,6 +1411,323 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
   }
 
   /**
+   * 生成飞书卡片格式的数据
+   * @param {string} projectName - 项目名称
+   * @param {number} mrIid - MR编号
+   * @param {Object} mrDetails - MR详情
+   * @param {Object} analysis - 分析结果
+   * @param {Object} aiAnalysis - AI分析结果
+   * @returns {Object} 飞书卡片数据
+   */
+  generateFeishuCardData(projectName, mrIid, mrDetails, analysis, aiAnalysis = null) {
+    const timestamp = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+    
+    // 计算统计信息
+    const fileCount = analysis.totalFiles;
+    const additionCount = analysis.addedLines;
+    const deletionCount = analysis.deletedLines;
+    const netChange = additionCount - deletionCount;
+    
+    // 状态评估
+    const getFileCountStatus = (count) => count > 15 ? '🔴 较多' : count > 10 ? '🟡 中等' : '🟢 合理';
+    const getAdditionStatus = (count) => count > 1000 ? '🔴 大量' : count > 500 ? '🟡 较多' : '🟢 适中';
+    const getDeletionStatus = (count) => count > 500 ? '🔴 大量' : count > 100 ? '🟡 较多' : '🟢 适中';
+    const getNetChangeStatus = (net) => Math.abs(net) > 1000 ? '🔴 重大变更' : Math.abs(net) > 500 ? '🟡 较大变更' : '🟢 正常范围';
+    
+    // AI评分和建议
+    let qualityScore = null;
+    let qualityColor = '⚪';
+    let aiSummary = '';
+    let mainIssues = [];
+    let mainSuggestions = [];
+    
+    if (aiAnalysis) {
+      // 处理不同AI分析器返回的数据结构
+      let actualAnalysisData = aiAnalysis;
+      
+      // 如果是嵌套结构（免费AI分析器返回格式），提取analysis字段
+      if (aiAnalysis.analysis && typeof aiAnalysis.analysis === 'object') {
+        actualAnalysisData = aiAnalysis.analysis;
+      }
+      
+      qualityScore = actualAnalysisData.quality_score;
+      if (qualityScore !== null) {
+        qualityColor = qualityScore >= 8 ? '🟢' : qualityScore >= 6 ? '🟡' : '🔴';
+      }
+      aiSummary = actualAnalysisData.summary || '';
+      
+      // 提取主要问题（限制数量）
+      if (actualAnalysisData.potential_issues && actualAnalysisData.potential_issues.length > 0) {
+        mainIssues = actualAnalysisData.potential_issues.slice(0, 3);
+      }
+      if (actualAnalysisData.improvement_suggestions && actualAnalysisData.improvement_suggestions.length > 0) {
+        mainSuggestions = actualAnalysisData.improvement_suggestions.slice(0, 3);
+      }
+    }
+    
+    // 构建飞书交互式卡片
+    const cardData = {
+      msg_type: "interactive",
+      card: {
+        config: {
+          wide_screen_mode: true,
+          enable_forward: true
+        },
+        header: {
+          template: qualityScore >= 8 ? "green" : qualityScore >= 6 ? "yellow" : qualityScore >= 1 ? "red" : "blue",
+          title: {
+            content: `📋 ${projectName} - PR #${mrIid} 评审完成`,
+            tag: "plain_text"
+          }
+        },
+        elements: [
+          {
+            tag: "div",
+            text: {
+              content: `**🎯 ${mrDetails.title}**\n👤 **提交者**: ${mrDetails.author.name}\n🌿 **分支**: \`${mrDetails.source_branch}\` → \`${mrDetails.target_branch}\`\n⏰ **时间**: ${timestamp}`,
+              tag: "lark_md"
+            }
+          },
+          {
+            tag: "hr"
+          },
+          {
+            tag: "div",
+            fields: [
+              {
+                is_short: true,
+                text: {
+                  content: `**📁 文件数量**\n${fileCount} ${getFileCountStatus(fileCount)}`,
+                  tag: "lark_md"
+                }
+              },
+              {
+                is_short: true,
+                text: {
+                  content: `**📊 代码变更**\n+${additionCount}/-${deletionCount} ${getNetChangeStatus(netChange)}`,
+                  tag: "lark_md"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    };
+    
+    // 添加AI评分部分
+    if (qualityScore !== null) {
+      cardData.card.elements.push({
+        tag: "div",
+        text: {
+          content: `**🤖 AI评分**: ${qualityColor} ${qualityScore}/10`,
+          tag: "lark_md"
+        }
+      });
+    }
+    
+    // 添加AI总结
+    if (aiSummary) {
+      cardData.card.elements.push({
+        tag: "div",
+        text: {
+          content: `**📋 评估总结**\n${aiSummary}`,
+          tag: "lark_md"
+        }
+      });
+    }
+    
+    // 添加问题和建议
+    if (mainIssues.length > 0 || analysis.potentialIssues.length > 0) {
+      let issuesText = '**⚠️ 主要问题**\n';
+      
+      // 添加代码检测问题
+      if (analysis.potentialIssues.length > 0) {
+        analysis.potentialIssues.slice(0, 2).forEach(issue => {
+          issuesText += `• ${issue}\n`;
+        });
+      }
+      
+      // 添加AI检测问题
+      if (mainIssues.length > 0) {
+        mainIssues.forEach(issue => {
+          issuesText += `• ${issue}\n`;
+        });
+      }
+      
+      cardData.card.elements.push({
+        tag: "hr"
+      });
+      cardData.card.elements.push({
+        tag: "div",
+        text: {
+          content: issuesText.trim(),
+          tag: "lark_md"
+        }
+      });
+    } else {
+      cardData.card.elements.push({
+        tag: "hr"
+      });
+      cardData.card.elements.push({
+        tag: "div",
+        text: {
+          content: "**✅ 代码质量良好**\n未发现明显问题，建议批准合并",
+          tag: "lark_md"
+        }
+      });
+    }
+    
+    // 添加改进建议
+    if (mainSuggestions.length > 0) {
+      let suggestionsText = '**💡 改进建议**\n';
+      mainSuggestions.forEach(suggestion => {
+        suggestionsText += `• ${suggestion}\n`;
+      });
+      
+      cardData.card.elements.push({
+        tag: "div",
+        text: {
+          content: suggestionsText.trim(),
+          tag: "lark_md"
+        }
+      });
+    }
+    
+    // 添加操作按钮
+    cardData.card.elements.push({
+      tag: "hr"
+    });
+    
+    // 生成报告和JSON文件的下载链接
+    const ip = this.getLocalIP();
+    const reportFileName = `review_git_${mrIid}.txt`;
+    const jsonFileName = `feishu_card_${mrIid}.json`;
+    const reportDownloadUrl = `http://${ip}:${CONSTANTS.HTTP_SERVER_PORT}/reports/${reportFileName}`;
+    const jsonDownloadUrl = `http://${ip}:${CONSTANTS.HTTP_SERVER_PORT}/reports/${jsonFileName}`;
+    
+    cardData.card.elements.push({
+      tag: "action",
+      actions: [
+        {
+          tag: "button",
+          text: {
+            content: "查看 MR",
+            tag: "plain_text"
+          },
+          type: "primary",
+          url: mrDetails.web_url
+        },
+        {
+          tag: "button",
+          text: {
+            content: "📄 下载报告",
+            tag: "plain_text"
+          },
+          type: "default",
+          url: reportDownloadUrl
+        }
+      ]
+    });
+    
+    // 添加第二行按钮
+    cardData.card.elements.push({
+      tag: "action",
+      actions: [
+      {
+        tag: "button",
+        text: {
+        content: "Jenkins 构建",
+        tag: "plain_text"
+        },
+        type: "default",
+        url: `http://jenkins.atomverse.com.cn:8080/job/APP_revicew/${process.env.BUILD_NUMBER || 'latest'}/console`
+      },
+      {
+        tag: "button",
+        text: {
+        content: "🌐 PR 查看",
+        tag: "plain_text"
+        },
+        type: "default",
+        url: mrDetails.web_url
+      }
+      ]
+    });
+    
+    return cardData;
+  }
+
+  /**
+   * 保存飞书卡片数据到文件
+   * @param {Object} cardData - 飞书卡片数据
+   * @returns {Promise<string>} 文件路径
+   */
+  async saveFeishuCardData(cardData) {
+    const outputDir = path.join(__dirname, 'reports');
+    const mrIidValue = global.currentMrIid || '0';
+    const fileName = `feishu_card_${mrIidValue}.json`;
+    const filePath = path.join(outputDir, fileName);
+    
+    await fs.writeFile(filePath, JSON.stringify(cardData, null, 2), 'utf8');
+    return path.resolve(filePath);
+  }
+
+  /**
+   * 发送飞书Webhook通知
+   * @param {Object} cardData - 飞书卡片数据
+   * @returns {Promise<boolean>} 发送结果
+   */
+  async sendFeishuWebhook(cardData) {
+    try {
+      const feishuConfig = this.config.notification?.feishu;
+      
+      if (!feishuConfig?.enabled) {
+        this.logger.info('飞书通知未启用，跳过发送');
+        return false;
+      }
+      
+      const webhookUrl = feishuConfig.webhook_url;
+      
+      if (!webhookUrl || 
+          webhookUrl === '${FEISHU_WEBHOOK_URL}' || 
+          webhookUrl === 'undefined' ||
+          webhookUrl.includes('${') ||
+          webhookUrl === '' ||
+          !webhookUrl.startsWith('https://')) {
+        this.logger.warn('飞书Webhook URL未配置或无效，跳过发送');
+        return false;
+      }
+      
+      this.logger.info('正在发送飞书通知...');
+      this.logger.info(`Webhook URL: ${webhookUrl.substring(0, 50)}...${webhookUrl.slice(-10)}`);
+      
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(cardData)
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        this.logger.info('✅ 飞书通知发送成功');
+        this.logger.info(`响应状态: ${response.status}`);
+        return true;
+      } else {
+        this.logger.error(`❌ 飞书通知发送失败: ${response.status} ${response.statusText}`);
+        const errorText = await response.text();
+        this.logger.error(`错误详情: ${errorText}`);
+        return false;
+      }
+      
+    } catch (error) {
+      this.logger.error('❌ 发送飞书通知时出错:', error.message);
+      return false;
+    }
+  }
+
+  /**
    * 执行完整的PR review流程
    * 主要的公共方法，协调所有review步骤
    * 
@@ -1412,8 +1800,20 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
       this.logger.info('保存报告...');
       const filePath = await this.saveReportToFile(report);
       
-      // 9. 生成访问URL
+      // 9. 生成飞书卡片数据
+      this.logger.info('生成飞书卡片数据...');
+      const feishuCardData = this.generateFeishuCardData(projectName, mrIid, mrDetails, analysis, aiAnalysis);
+      
+      // 10. 保存飞书卡片数据
+      this.logger.info('保存飞书卡片数据...');
+      const feishuCardPath = await this.saveFeishuCardData(feishuCardData);
+      
+      // 11. 发送飞书Webhook通知
+      await this.sendFeishuWebhook(feishuCardData);
+      
+      // 12. 生成访问URL
       const fileURL = this.generateFileURL(filePath);
+      const jsonURL = this.generateFileURL(feishuCardPath);
       
       // 记录成功统计
       const duration = Date.now() - startTime;
@@ -1425,6 +1825,8 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
       return {
         filePath,
         fileURL,
+        feishuCardPath,
+        jsonURL,
         duration,
         analysis,
         aiAnalysis
