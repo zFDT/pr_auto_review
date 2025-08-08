@@ -15,7 +15,7 @@
     "test": "node --experimental-loader ./test/loader.js test/**/*.test.js",
     "test:unit": "node --experimental-loader ./test/loader.js test/unit/**/*.test.js",
     "test:integration": "node --experimental-loader ./test/loader.js test/integration/**/*.test.js",
-    "test:ai": "node test-ai-analyzers.js",
+    "test:ai": "node test-free-ai.js",
     "test:copilot": "node test-copilot.js",
     "test:config": "node config-loader.js",
     "check-config": "node -e \"import('./config-loader.js').then(({configLoader}) => configLoader.loadConfig().then(() => console.log('✅ 配置验证通过')).catch(err => { console.error('❌ 配置错误:', err.message); process.exit(1); }))\"",

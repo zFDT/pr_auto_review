@@ -24,7 +24,7 @@
     "check_console_logs": true,
     "check_todos": true,
     "enable_ai_analysis": true,
-    "ai_provider": "copilot",
+    "ai_provider": "aliyun_bailian",
     "exclude_patterns": [
       "*.min.js",
       "*.min.css",
@@ -61,10 +61,56 @@
       "timeout": 60000
     },
     "copilot": {
-      "enabled": true,
+      "enabled": false,
       "vscode_path": "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
       "timeout": 30000,
       "fallback_to_openai": true
+    },
+    "free_ai": {
+      "enabled": true,
+      "priority": ["ollama", "aliyun_bailian", "groq", "huggingface", "together", "baidu", "tongyi", "static"]
+    },
+    "groq": {
+      "api_key": "${GROQ_API_KEY}",
+      "model": "llama3-8b-8192",
+      "base_url": "https://api.groq.com/openai/v1",
+      "timeout": 30000
+    },
+    "huggingface": {
+      "token": "${HUGGINGFACE_TOKEN}",
+      "model": "microsoft/DialoGPT-large",
+      "timeout": 30000
+    },
+    "together": {
+      "api_key": "${TOGETHER_API_KEY}",
+      "model": "meta-llama/Llama-2-7b-chat-hf",
+      "timeout": 30000
+    },
+    "ollama": {
+      "enabled": true,
+      "base_url": "http://localhost:11434",
+      "model": "codellama",
+      "timeout": 30000
+    },
+    "baidu": {
+      "api_key": "${BAIDU_API_KEY}",
+      "secret_key": "${BAIDU_SECRET_KEY}",
+      "model": "ERNIE-Bot-turbo",
+      "timeout": 30000
+    },
+    "tongyi": {
+      "api_key": "${TONGYI_API_KEY}",
+      "model": "qwen-turbo",
+      "timeout": 30000
+    },
+    "aliyun_bailian": {
+      "api_key": "your_openai_api_key_here",
+      "model": "qwen-max",
+      "workspace_id": "your_aliyun_workspace_id",
+      "base_url": "https://dashscope.aliyuncs.com/api/v1",
+      "timeout": 60000,
+      "max_tokens": 4000,
+      "temperature": 0.1
     },
     "review_prompts": {
       "system_prompt": "你是一个专业的代码审查专家，专注于Flutter/Dart、JavaScript/TypeScript、Java、Python等语言的代码质量分析。",

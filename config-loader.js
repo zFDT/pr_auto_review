@@ -60,7 +60,7 @@ const CONFIG_SCHEMA = {
       check_console_logs: { type: 'boolean', default: true },
       check_todos: { type: 'boolean', default: true },
       enable_ai_analysis: { type: 'boolean', default: true },
-      ai_provider: { type: 'string', enum: ['openai', 'copilot', 'auto-copilot'], default: 'openai' }
+      ai_provider: { type: 'string', enum: ['openai', 'copilot', 'auto-copilot', 'aliyun_bailian', 'bailian', 'free'], default: 'openai' }
     }
   },
   ai_config: {
@@ -594,7 +594,7 @@ class ConfigLoader extends EventEmitter {
       }
       
       // 尝试使用备用配置
-      const fallbackConfig = await this.tryLoadFallbackConfig(configPath);
+      const fallbackConfig = await this.tryLoadFallbackConfig(configPath, 0);
       if (fallbackConfig) {
         this.logger.warn('使用备用配置');
         return fallbackConfig;
@@ -608,7 +608,13 @@ class ConfigLoader extends EventEmitter {
    * 尝试加载备用配置
    * @private
    */
-  async tryLoadFallbackConfig(originalPath) {
+  async tryLoadFallbackConfig(originalPath, depth = 0) {
+    // 防止无限递归
+    if (depth > 2) {
+      this.logger.error('备用配置加载达到最大递归深度，停止尝试');
+      return null;
+    }
+    
     const fallbackPaths = [
       'config.backup.json',
       'config.default.json',
@@ -616,10 +622,41 @@ class ConfigLoader extends EventEmitter {
     ];
     
     for (const fallbackPath of fallbackPaths) {
+      // 避免循环尝试同一个文件
+      if (fallbackPath === originalPath) {
+        continue;
+      }
+      
       try {
         this.logger.info(`尝试备用配置: ${fallbackPath}`);
-        return await this.loadConfig(fallbackPath, false);
-      } catch {
+        const fullPath = path.resolve(__dirname, fallbackPath);
+        
+        // 检查文件是否存在
+        try {
+          await fs.access(fullPath);
+        } catch {
+          this.logger.debug(`备用配置文件不存在: ${fallbackPath}`);
+          continue;
+        }
+        
+        // 直接读取和解析配置文件，不递归调用loadConfig
+        const configContent = await fs.readFile(fullPath, 'utf8');
+        let config = JSON.parse(configContent);
+        
+        // 加载环境变量
+        await this.loadAllEnvFiles();
+        
+        // 替换环境变量
+        config = this.replaceEnvVars(config);
+        
+        // 验证配置
+        config = this.validateConfig(config);
+        
+        this.logger.info(`备用配置加载成功: ${fallbackPath}`);
+        return config;
+        
+      } catch (error) {
+        this.logger.debug(`备用配置加载失败 ${fallbackPath}:`, error.message);
         // 继续尝试下一个备用配置
       }
     }

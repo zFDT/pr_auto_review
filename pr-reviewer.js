@@ -31,6 +31,8 @@
 import { Gitlab } from "@gitbeaker/rest";
 import { CopilotAnalyzer } from './copilot-extension.js';
 import { OpenAIAnalyzer } from './openai-analyzer.js';
+import { FreeAIAnalyzer } from './free-ai-analyzer.js';
+import { AliyunBailianAnalyzer } from './aliyun-bailian-analyzer.js';
 import { configLoader } from './config-loader.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -188,6 +190,7 @@ class AIAnalyzer {
     // AI分析器实例
     this.openaiAnalyzer = null;
     this.copilotAnalyzer = null;
+    this.freeAIAnalyzer = null;
     
     // 性能监控
     this.analysisStats = {
@@ -216,10 +219,22 @@ class AIAnalyzer {
         this.logger.info('OpenAI分析器初始化成功');
       }
       
+      // 初始化阿里云百炼分析器
+      if (aiConfig?.aliyun_bailian && this.isAliyunBailianConfigured()) {
+        this.aliyunBailianAnalyzer = new AliyunBailianAnalyzer(this.config);
+        this.logger.info('阿里云百炼分析器初始化成功');
+      }
+      
       // 初始化Copilot分析器
       if (aiConfig?.copilot?.enabled) {
         this.copilotAnalyzer = new CopilotAnalyzer(this.config);
         this.logger.info('Copilot分析器初始化成功');
+      }
+      
+      // 初始化免费AI分析器 (优先选择)
+      if (aiConfig?.free_ai?.enabled !== false) {
+        this.freeAIAnalyzer = new FreeAIAnalyzer(this.config);
+        this.logger.info('免费AI分析器初始化成功');
       }
       
       // 检查是否至少有一个可用的分析器
@@ -242,11 +257,25 @@ class AIAnalyzer {
   }
 
   /**
+   * 检查阿里云百炼是否正确配置
+   * @returns {boolean} 是否配置正确
+   */
+  isAliyunBailianConfigured() {
+    const apiKey = process.env.ALIYUN_BAILIAN_API_KEY || this.config.ai_config?.aliyun_bailian?.api_key;
+    const workspaceId = process.env.ALIYUN_BAILIAN_WORKSPACE_ID || this.config.ai_config?.aliyun_bailian?.workspace_id;
+    return apiKey && workspaceId && 
+           apiKey !== '${ALIYUN_BAILIAN_API_KEY}' && 
+           workspaceId !== '${ALIYUN_BAILIAN_WORKSPACE_ID}';
+  }
+
+  /**
    * 检查是否有可用的AI分析器
    * @returns {boolean} 是否有可用分析器
    */
   hasAvailableAnalyzer() {
-    return (this.openaiAnalyzer?.isAvailable()) || 
+    return (this.freeAIAnalyzer?.isAvailable()) ||
+           (this.aliyunBailianAnalyzer?.isAvailable()) ||
+           (this.openaiAnalyzer?.isAvailable()) || 
            (this.copilotAnalyzer?.isAvailable());
   }
 
@@ -270,19 +299,43 @@ class AIAnalyzer {
     this.analysisStats.totalRequests++;
 
     try {
-      const provider = this.config.review_settings.ai_provider;
+      const provider = this.config.review_settings.ai_provider || 'free';
       this.logger.info(`开始使用 ${provider} 进行代码分析`);
 
       let analysisResult = null;
 
-      // 根据配置选择分析器
+      // 根据配置选择分析器，优先使用免费AI
       switch (provider) {
+        case 'free':
+        case 'auto':
+          // 优先使用免费AI分析器
+          if (this.freeAIAnalyzer?.isAvailable()) {
+            analysisResult = await this.freeAIAnalyzer.analyzeCodeChanges(diff, mrDetails);
+          } else if (this.aliyunBailianAnalyzer?.isAvailable()) {
+            analysisResult = await this.aliyunBailianAnalyzer.analyzeCodeChanges(diff, mrDetails);
+          } else if (this.openaiAnalyzer?.isAvailable()) {
+            analysisResult = await this.openaiAnalyzer.analyzeCodeChanges(diff, mrDetails);
+          } else if (this.copilotAnalyzer?.isAvailable()) {
+            analysisResult = await this.copilotAnalyzer.analyzeCodeChanges(diff, mrDetails);
+          }
+          break;
+          
+        case 'aliyun_bailian':
+        case 'bailian':
+          if (this.aliyunBailianAnalyzer?.isAvailable()) {
+            analysisResult = await this.aliyunBailianAnalyzer.analyzeCodeChanges(diff, mrDetails);
+          } else {
+            this.logger.warn('阿里云百炼分析器不可用，回退到免费AI');
+            analysisResult = await this.freeAIAnalyzer?.analyzeCodeChanges(diff, mrDetails);
+          }
+          break;
+          
         case 'openai':
           if (this.openaiAnalyzer?.isAvailable()) {
             analysisResult = await this.openaiAnalyzer.analyzeCodeChanges(diff, mrDetails);
           } else {
-            this.logger.warn('OpenAI分析器不可用，尝试使用Copilot');
-            analysisResult = await this.fallbackToCopilot(diff, mrDetails);
+            this.logger.warn('OpenAI分析器不可用，回退到免费AI');
+            analysisResult = await this.freeAIAnalyzer?.analyzeCodeChanges(diff, mrDetails);
           }
           break;
 
@@ -291,14 +344,14 @@ class AIAnalyzer {
           if (this.copilotAnalyzer?.isAvailable()) {
             analysisResult = await this.copilotAnalyzer.analyzeCodeChanges(diff, mrDetails);
           } else {
-            this.logger.warn('Copilot分析器不可用，尝试使用OpenAI');
-            analysisResult = await this.fallbackToOpenAI(diff, mrDetails);
+            this.logger.warn('Copilot分析器不可用，回退到免费AI');
+            analysisResult = await this.freeAIAnalyzer?.analyzeCodeChanges(diff, mrDetails);
           }
           break;
 
         default:
-          this.logger.warn(`未知的AI提供商: ${provider}，使用默认策略`);
-          analysisResult = await this.useDefaultStrategy(diff, mrDetails);
+          this.logger.warn(`未知的AI提供商: ${provider}，使用免费AI分析器`);
+          analysisResult = await this.freeAIAnalyzer?.analyzeCodeChanges(diff, mrDetails);
       }
 
       // 记录性能统计
@@ -561,7 +614,8 @@ class PRReviewer {
     try {
       this.logger.info(`获取代码差异: 项目${projectId}, MR#${mrIid}`);
       
-      const diff = await this.api.MergeRequests.showDiffs(projectId, mrIid);
+      // 使用正确的 GitLab API 方法
+      const diff = await this.api.MergeRequests.allDiffs(projectId, mrIid);
       
       // 过滤和清理差异数据
       const filteredDiff = this.filterAndCleanDiff(diff);
