@@ -1456,6 +1456,36 @@ ${analysisFocus.map(focus => `- ${focus}`).join('\n')}
     
     this.logger.info('🧹 OpenAI分析器资源已清理');
   }
+
+  /**
+   * 保存分析结果到文件
+   * 将分析结果保存为JSON格式用于后续分析
+   * 
+   * @param {Object} result - 分析结果
+   * @param {string} outputDir - 输出目录
+   * @returns {Promise<string>} 保存的文件路径
+   */
+  async saveAnalysisResult(result, outputDir = './reports') {
+    try {
+      // 确保输出目录存在
+      await fs.mkdir(outputDir, { recursive: true });
+      
+      // 生成文件名
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `openai_analysis_${timestamp}.json`;
+      const filepath = path.join(outputDir, filename);
+      
+      // 保存结果
+      await fs.writeFile(filepath, JSON.stringify(result, null, 2), 'utf8');
+      
+      this.logger.info(`📄 分析结果已保存: ${filepath}`);
+      return filepath;
+      
+    } catch (error) {
+      this.logger.error('❌ 保存分析结果失败:', error.message);
+      throw error;
+    }
+  }
 }
 
 // 导出类和常量
@@ -1551,272 +1581,3 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   
   testOpenAIAnalyzer();
 }
-  getSystemPrompt() {
-    const defaultPrompt = `你是一个专业的代码审查专家，专注于代码质量分析。
-请以 JSON 格式返回分析结果，包含以下字段：
-{
-  "status": "success",
-  "summary": "总体评估",
-  "score": 85,
-  "issues": [
-    {
-      "type": "bug|security|performance|style|maintainability",
-      "severity": "high|medium|low",
-      "file": "文件路径",
-      "line": 行号,
-      "message": "问题描述",
-      "suggestion": "改进建议"
-    }
-  ],
-  "suggestions": [
-    {
-      "category": "代码质量|性能|安全|架构",
-      "description": "具体建议",
-      "priority": "high|medium|low"
-    }
-  ],
-  "positives": ["积极方面"],
-  "metadata": {
-    "analyzed_files": 文件数量,
-    "lines_changed": 代码行数,
-    "analysis_time": "分析时间"
-  }
-}`;
-
-    return this.reviewPrompts.system_prompt || defaultPrompt;
-  }
-
-  /**
-   * 构建分析提示词
-   */
-  buildAnalysisPrompt(diff, mrDetails) {
-    const focusAreas = this.reviewPrompts.analysis_focus || [
-      "代码质量和最佳实践",
-      "潜在的bug和逻辑错误", 
-      "安全漏洞和风险点",
-      "性能优化建议",
-      "代码可维护性和可读性"
-    ];
-
-    let prompt = `请审查以下代码变更，重点关注：\n${focusAreas.map(area => `- ${area}`).join('\n')}\n\n`;
-    
-    // 添加 MR 基本信息
-    if (mrDetails) {
-      prompt += `## Merge Request 信息\n`;
-      prompt += `- 标题: ${mrDetails.title}\n`;
-      prompt += `- 描述: ${mrDetails.description || '无'}\n`;
-      prompt += `- 作者: ${mrDetails.author?.name || '未知'}\n`;
-      prompt += `- 分支: ${mrDetails.source_branch} → ${mrDetails.target_branch}\n\n`;
-    }
-
-    // 添加代码变更
-    prompt += `## 代码变更\n\n`;
-    
-    for (const file of diff) {
-      if (!file.diff || this.shouldSkipFile(file.new_path)) {
-        continue;
-      }
-
-      prompt += `### 文件: ${file.new_path}\n`;
-      
-      if (file.new_file) {
-        prompt += `**新文件**\n`;
-      } else if (file.deleted_file) {
-        prompt += `**删除文件**\n`;
-      } else {
-        prompt += `**修改文件**\n`;
-      }
-      
-      // 限制 diff 长度避免超出 token 限制
-      const diffLines = file.diff.split('\n');
-      const maxLines = 200;
-      
-      if (diffLines.length > maxLines) {
-        const truncatedDiff = diffLines.slice(0, maxLines).join('\n') + 
-          `\n... (省略 ${diffLines.length - maxLines} 行)`;
-        prompt += `\`\`\`diff\n${truncatedDiff}\n\`\`\`\n\n`;
-      } else {
-        prompt += `\`\`\`diff\n${file.diff}\n\`\`\`\n\n`;
-      }
-    }
-
-    prompt += `\n请以 JSON 格式返回详细的分析结果。`;
-    
-    return prompt;
-  }
-
-  /**
-   * 判断是否应该跳过文件
-   */
-  shouldSkipFile(filePath) {
-    if (!filePath) return true;
-    
-    const excludePatterns = this.config.review_settings?.exclude_patterns || [];
-    
-    return excludePatterns.some(pattern => {
-      // 简单的 glob 模式匹配
-      if (pattern.includes('*')) {
-        const regex = new RegExp(pattern.replace(/\*/g, '.*'));
-        return regex.test(filePath);
-      }
-      return filePath.includes(pattern);
-    });
-  }
-
-  /**
-   * 解析分析结果
-   */
-  parseAnalysisResult(response) {
-    try {
-      const content = response.choices[0]?.message?.content;
-      if (!content) {
-        throw new Error('响应内容为空');
-      }
-
-      let analysisData;
-      try {
-        analysisData = JSON.parse(content);
-      } catch (parseError) {
-        // 如果不是有效的 JSON，尝试提取 JSON 部分
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          analysisData = JSON.parse(jsonMatch[0]);
-        } else {
-          throw new Error('无法解析 JSON 响应');
-        }
-      }
-
-      // 确保结果包含必要字段
-      const result = {
-        status: 'success',
-        provider: 'openai',
-        model: this.aiConfig.model || 'gpt-4o',
-        timestamp: new Date().toISOString(),
-        usage: {
-          prompt_tokens: response.usage?.prompt_tokens || 0,
-          completion_tokens: response.usage?.completion_tokens || 0,
-          total_tokens: response.usage?.total_tokens || 0
-        },
-        analysis: {
-          summary: analysisData.summary || '分析完成',
-          score: analysisData.score || 80,
-          issues: this.normalizeIssues(analysisData.issues || []),
-          suggestions: analysisData.suggestions || [],
-          positives: analysisData.positives || [],
-          metadata: {
-            analyzed_files: analysisData.metadata?.analyzed_files || 0,
-            lines_changed: analysisData.metadata?.lines_changed || 0,
-            analysis_time: analysisData.metadata?.analysis_time || new Date().toISOString(),
-            ...analysisData.metadata
-          }
-        }
-      };
-
-      return result;
-
-    } catch (error) {
-      console.error('❌ 解析 OpenAI 响应失败:', error.message);
-      return this.createFailureReport(`响应解析错误: ${error.message}`);
-    }
-  }
-
-  /**
-   * 标准化问题格式
-   */
-  normalizeIssues(issues) {
-    return issues.map(issue => ({
-      type: issue.type || 'quality',
-      severity: issue.severity || 'medium',
-      file: issue.file || '',
-      line: issue.line || 0,
-      message: issue.message || '',
-      suggestion: issue.suggestion || '',
-      category: issue.category || issue.type || 'general'
-    }));
-  }
-
-  /**
-   * 创建失败报告
-   */
-  createFailureReport(errorMessage) {
-    return {
-      status: 'failed',
-      provider: 'openai',
-      error: errorMessage,
-      timestamp: new Date().toISOString(),
-      troubleshooting: [
-        '1. 检查 OpenAI API 密钥是否正确配置',
-        '2. 确认网络连接正常',
-        '3. 检查 API 限额和余额',
-        '4. 验证模型名称是否正确'
-      ]
-    };
-  }
-
-  /**
-   * 测试 OpenAI 连接
-   */
-  async testConnection() {
-    if (!this.isAvailable()) {
-      return {
-        success: false,
-        error: 'OpenAI 客户端未初始化'
-      };
-    }
-
-    try {
-      console.log('🧪 测试 OpenAI 连接...');
-      
-      const response = await this.openai.chat.completions.create({
-        model: this.aiConfig.model || 'gpt-4o',
-        messages: [
-          {
-            role: 'user',
-            content: '请回复"连接测试成功"来确认API工作正常。'
-          }
-        ],
-        max_tokens: 50,
-        temperature: 0
-      });
-
-      const content = response.choices[0]?.message?.content;
-      
-      return {
-        success: true,
-        message: content,
-        model: this.aiConfig.model || 'gpt-4o',
-        usage: response.usage
-      };
-
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  }
-
-  /**
-   * 保存分析结果到文件
-   */
-  async saveAnalysisResult(result, outputDir = './reports') {
-    try {
-      await fs.mkdir(outputDir, { recursive: true });
-      
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const filename = `openai_analysis_${timestamp}.json`;
-      const filepath = path.join(outputDir, filename);
-      
-      await fs.writeFile(filepath, JSON.stringify(result, null, 2), 'utf8');
-      
-      console.log(`📝 分析结果已保存: ${filepath}`);
-      return filepath;
-      
-    } catch (error) {
-      console.error('❌ 保存分析结果失败:', error.message);
-      throw error;
-    }
-  }
-}
-
-export { OpenAIAnalyzer };
