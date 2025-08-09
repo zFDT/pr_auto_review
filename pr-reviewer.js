@@ -1420,9 +1420,10 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
    * @param {Object} mrDetails - MR详情
    * @param {Object} analysis - 分析结果
    * @param {Object} aiAnalysis - AI分析结果
+   * @param {string} reportFilePath - 报告文件路径
    * @returns {Object} 飞书卡片数据
    */
-  generateFeishuCardData(projectName, mrIid, mrDetails, analysis, aiAnalysis = null) {
+  generateFeishuCardData(projectName, mrIid, mrDetails, analysis, aiAnalysis = null, reportFilePath = null) {
     const timestamp = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
     
     // 计算统计信息
@@ -1603,10 +1604,19 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
     
     // 生成报告和JSON文件的下载链接
     const ip = this.getLocalIP();
-    const reportFileName = `review_git_${mrIid}.txt`;
+    let reportDownloadUrl, jsonDownloadUrl;
+    
+    if (reportFilePath) {
+      // 使用实际的文件路径生成URL
+      reportDownloadUrl = this.generateFileURL(reportFilePath);
+    } else {
+      // 回退到原来的逻辑
+      const reportFileName = `review_git_${mrIid}.txt`;
+      reportDownloadUrl = `http://${ip}:${CONSTANTS.HTTP_SERVER_PORT}/reports/${mrIid}/${reportFileName}`;
+    }
+    
     const jsonFileName = `feishu_card_${mrIid}.json`;
-    const reportDownloadUrl = `http://${ip}:${CONSTANTS.HTTP_SERVER_PORT}/reports/${mrIid}/${reportFileName}`;
-    const jsonDownloadUrl = `http://${ip}:${CONSTANTS.HTTP_SERVER_PORT}/reports/${mrIid}/${jsonFileName}`;
+    jsonDownloadUrl = `http://${ip}:${CONSTANTS.HTTP_SERVER_PORT}/reports/${mrIid}/${jsonFileName}`;
     
     cardData.card.elements.push({
       tag: "action",
@@ -1811,7 +1821,7 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
       
       // 9. 生成飞书卡片数据
       this.logger.info('生成飞书卡片数据...');
-      const feishuCardData = this.generateFeishuCardData(projectName, mrIid, mrDetails, analysis, aiAnalysis);
+      const feishuCardData = this.generateFeishuCardData(projectName, mrIid, mrDetails, analysis, aiAnalysis, filePath);
       
       // 10. 保存飞书卡片数据
       this.logger.info('保存飞书卡片数据...');

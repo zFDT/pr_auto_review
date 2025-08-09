@@ -50,6 +50,15 @@ class AliyunBailianAnalyzer {
     
     // 请求计数器（用于文件命名）
     this.requestCounter = 0;
+    
+    // Token使用统计
+    this.tokenStats = {
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      totalTokens: 0,
+      requestCount: 0,
+      averageTokensPerRequest: 0
+    };
   }
 
   /**
@@ -150,6 +159,116 @@ class AliyunBailianAnalyzer {
   }
 
   /**
+   * 更新Token使用统计
+   * @param {Object} usage - token使用信息
+   */
+  updateTokenStats(usage) {
+    if (!usage) return;
+    
+    const inputTokens = usage.input_tokens || usage.prompt_tokens || 0;
+    const outputTokens = usage.output_tokens || usage.completion_tokens || 0;
+    const totalTokens = usage.total_tokens || (inputTokens + outputTokens);
+    
+    this.tokenStats.totalInputTokens += inputTokens;
+    this.tokenStats.totalOutputTokens += outputTokens;
+    this.tokenStats.totalTokens += totalTokens;
+    this.tokenStats.requestCount += 1;
+    this.tokenStats.averageTokensPerRequest = this.tokenStats.totalTokens / this.tokenStats.requestCount;
+    
+    console.log(`📊 Token使用: 输入=${inputTokens}, 输出=${outputTokens}, 总计=${totalTokens}`);
+  }
+
+  /**
+   * 获取账户Token使用情况（如果API支持的话）
+   * 注意：此功能可能需要特定的API权限
+   */
+  async getAccountTokenUsage() {
+    const { api_key, base_url } = this.bailianConfig;
+    
+    try {
+      // 方法1: 尝试获取账户使用情况
+      let response = await fetch(`${base_url}/account/usage`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${api_key}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const usageInfo = await response.json();
+        return usageInfo;
+      }
+
+      // 方法2: 尝试获取模型列表，有时候这个API会返回配额信息
+      response = await fetch(`${base_url}/models`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${api_key}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const modelsInfo = await response.json();
+        // 检查是否包含配额信息
+        if (modelsInfo.usage || modelsInfo.quota) {
+          return modelsInfo.usage || modelsInfo.quota;
+        }
+      }
+
+      // 方法3: 发送一个最小的测试请求来检查rate limiting headers
+      const testRequest = {
+        model: this.bailianConfig.model,
+        input: {
+          messages: [
+            {
+              role: 'user',
+              content: '测试'
+            }
+          ]
+        },
+        parameters: {
+          max_tokens: 1,
+          temperature: 0.1
+        }
+      };
+
+      response = await fetch(`${base_url}/services/aigc/text-generation/generation`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${api_key}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(testRequest)
+      });
+
+      // 检查响应头中的rate limiting信息
+      const rateLimitHeaders = {
+        remaining: response.headers.get('x-ratelimit-remaining'),
+        limit: response.headers.get('x-ratelimit-limit'),
+        resetTime: response.headers.get('x-ratelimit-reset'),
+        tokensRemaining: response.headers.get('x-tokens-remaining'),
+        tokensLimit: response.headers.get('x-tokens-limit')
+      };
+
+      // 如果找到了rate limiting信息
+      if (Object.values(rateLimitHeaders).some(val => val !== null)) {
+        return {
+          rate_limit_info: rateLimitHeaders,
+          source: 'rate_limit_headers'
+        };
+      }
+
+      return null;
+
+    } catch (error) {
+      // 静默处理错误，因为这个功能可能不被支持
+      return null;
+    }
+  }
+
+  /**
    * 主要的代码分析方法
    */
   async analyzeCodeChanges(diff, mrDetails) {
@@ -193,6 +312,9 @@ class AliyunBailianAnalyzer {
   async performAnalysis(diff, mrDetails) {
     const analysisPrompt = this.buildAnalysisPrompt(diff, mrDetails);
     
+    // 重置本次分析的token统计
+    const sessionStartTokens = { ...this.tokenStats };
+    
     // 分块处理大型差异
     const chunks = this.chunkDiff(diff);
     const analyses = [];
@@ -206,6 +328,87 @@ class AliyunBailianAnalyzer {
     
     // 合并分析结果
     const mergedAnalysis = this.mergeAnalyses(analyses);
+    
+    // 计算本次分析使用的token
+    const sessionTokensUsed = {
+      inputTokens: this.tokenStats.totalInputTokens - sessionStartTokens.totalInputTokens,
+      outputTokens: this.tokenStats.totalOutputTokens - sessionStartTokens.totalOutputTokens,
+      totalTokens: this.tokenStats.totalTokens - sessionStartTokens.totalTokens,
+      requests: this.tokenStats.requestCount - sessionStartTokens.requestCount
+    };
+    
+    // 输出本次分析的token使用统计
+    console.log('\n📊 阿里云百炼Token使用统计:');
+    console.log(`🔄 本次分析请求数: ${sessionTokensUsed.requests}`);
+    console.log(`📝 本次输入Token: ${sessionTokensUsed.inputTokens.toLocaleString()}`);
+    console.log(`💬 本次输出Token: ${sessionTokensUsed.outputTokens.toLocaleString()}`);
+    console.log(`📋 本次总计Token: ${sessionTokensUsed.totalTokens.toLocaleString()}`);
+    console.log(`📈 累计总Token使用: ${this.tokenStats.totalTokens.toLocaleString()}`);
+    console.log(`⚡ 平均每次请求Token: ${Math.round(this.tokenStats.averageTokensPerRequest).toLocaleString()}`);
+    
+    // 尝试获取账户token使用情况
+    console.log('\n🔍 正在查询账户Token使用情况...');
+    try {
+      const accountUsage = await this.getAccountTokenUsage();
+      if (accountUsage) {
+        console.log('💰 账户Token使用情况:');
+        
+        // 处理标准的配额信息
+        if (accountUsage.quota_limit) {
+          console.log(`📊 配额限制: ${accountUsage.quota_limit.toLocaleString()}`);
+        }
+        if (accountUsage.quota_used) {
+          console.log(`📈 已使用配额: ${accountUsage.quota_used.toLocaleString()}`);
+        }
+        if (accountUsage.quota_remaining) {
+          console.log(`💎 剩余配额: ${accountUsage.quota_remaining.toLocaleString()}`);
+        }
+        if (accountUsage.quota_limit && accountUsage.quota_used) {
+          const remaining = accountUsage.quota_limit - accountUsage.quota_used;
+          const usagePercent = ((accountUsage.quota_used / accountUsage.quota_limit) * 100).toFixed(2);
+          console.log(`📊 配额使用率: ${usagePercent}%`);
+          console.log(`💎 估算剩余Token: ${remaining.toLocaleString()}`);
+        }
+
+        // 处理rate limiting信息
+        if (accountUsage.rate_limit_info) {
+          const rateInfo = accountUsage.rate_limit_info;
+          console.log('🚦 Rate Limiting信息:');
+          if (rateInfo.remaining) {
+            console.log(`🔄 剩余请求数: ${rateInfo.remaining}`);
+          }
+          if (rateInfo.limit) {
+            console.log(`📏 请求限制: ${rateInfo.limit}`);
+          }
+          if (rateInfo.tokensRemaining) {
+            console.log(`💎 剩余Token数: ${parseInt(rateInfo.tokensRemaining).toLocaleString()}`);
+          }
+          if (rateInfo.tokensLimit) {
+            console.log(`📊 Token限制: ${parseInt(rateInfo.tokensLimit).toLocaleString()}`);
+          }
+          if (rateInfo.resetTime) {
+            const resetDate = new Date(parseInt(rateInfo.resetTime) * 1000);
+            console.log(`⏰ 限制重置时间: ${resetDate.toLocaleString('zh-CN')}`);
+          }
+        }
+
+        // 处理其他格式的使用信息
+        if (accountUsage.total_tokens) {
+          console.log(`📋 总Token使用: ${accountUsage.total_tokens.toLocaleString()}`);
+        }
+        if (accountUsage.tokens_left) {
+          console.log(`💎 剩余Token: ${accountUsage.tokens_left.toLocaleString()}`);
+        }
+        
+      } else {
+        console.log('ℹ️ 账户Token使用情况查询不可用（API不支持或需要特殊权限）');
+        console.log('📝 仅显示本次会话统计信息');
+        console.log('💡 提示: 阿里云百炼可能不公开提供剩余Token查询接口');
+      }
+    } catch (error) {
+      console.log(`⚠️ 获取账户Token使用情况失败: ${error.message}`);
+    }
+    console.log('');
     
     return {
       status: 'success',
@@ -222,7 +425,11 @@ class AliyunBailianAnalyzer {
         raw_response: mergedAnalysis.raw_response
       },
       timestamp: new Date().toISOString(),
-      chunks_analyzed: analyses.length
+      chunks_analyzed: analyses.length,
+      token_usage: {
+        session: sessionTokensUsed,
+        cumulative: { ...this.tokenStats }
+      }
     };
   }
 
@@ -473,6 +680,9 @@ ${diffText}
   parseAPIResponse(result) {
     const output = result.output || {};
     const usage = result.usage || {};
+    
+    // 更新Token统计
+    this.updateTokenStats(usage);
     
     const content = output.choices?.[0]?.message?.content || output.text || '分析完成';
     
@@ -826,7 +1036,14 @@ ${diffText}
       cache_size: this.analysisCache.size,
       total_requests: this.totalRequests || 0,
       cache_hits: this.cacheHits || 0,
-      avg_response_time: this.avgResponseTime || 0
+      avg_response_time: this.avgResponseTime || 0,
+      token_usage: {
+        total_input_tokens: this.tokenStats.totalInputTokens,
+        total_output_tokens: this.tokenStats.totalOutputTokens,
+        total_tokens: this.tokenStats.totalTokens,
+        request_count: this.tokenStats.requestCount,
+        average_tokens_per_request: Math.round(this.tokenStats.averageTokensPerRequest)
+      }
     };
   }
 
@@ -837,6 +1054,35 @@ ${diffText}
     const oldSize = this.analysisCache.size;
     this.analysisCache.clear();
     console.log(`🗑️ 清理所有缓存，释放 ${oldSize} 个缓存项`);
+  }
+
+  /**
+   * 重置Token统计
+   */
+  resetTokenStats() {
+    this.tokenStats = {
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      totalTokens: 0,
+      requestCount: 0,
+      averageTokensPerRequest: 0
+    };
+    console.log('🔄 Token统计已重置');
+  }
+
+  /**
+   * 获取Token统计信息
+   */
+  getTokenStats() {
+    return {
+      ...this.tokenStats,
+      formatted: {
+        totalInputTokens: this.tokenStats.totalInputTokens.toLocaleString(),
+        totalOutputTokens: this.tokenStats.totalOutputTokens.toLocaleString(),
+        totalTokens: this.tokenStats.totalTokens.toLocaleString(),
+        averageTokensPerRequest: Math.round(this.tokenStats.averageTokensPerRequest).toLocaleString()
+      }
+    };
   }
 }
 
