@@ -24,6 +24,7 @@
 
 import fetch from 'node-fetch';
 import fs from 'fs/promises';
+import path from 'path';
 import { createHash } from 'crypto';
 
 /**
@@ -46,6 +47,9 @@ class AliyunBailianAnalyzer {
     this.maxConcurrent = this.bailianConfig.max_concurrent || 5; // 提高并发数
     this.retryAttempts = this.bailianConfig.retry_attempts || 3;
     this.retryDelay = this.bailianConfig.retry_delay || 1000;
+    
+    // 请求计数器（用于文件命名）
+    this.requestCounter = 0;
   }
 
   /**
@@ -107,6 +111,45 @@ class AliyunBailianAnalyzer {
   }
 
   /**
+   * 保存API请求和响应数据
+   * @param {Object} requestData - 请求数据
+   * @param {Object} responseData - 响应数据
+   * @param {number} chunkIndex - 分块索引
+   */
+  async saveRequestResponse(requestData, responseData, chunkIndex = null) {
+    try {
+      // 增加请求计数器
+      this.requestCounter++;
+      
+      // 生成MR专属目录
+      const mrIid = global.currentMrIid || 'unknown';
+      const reportsDir = path.join(process.cwd(), 'reports');
+      const mrDir = path.join(reportsDir, mrIid.toString());
+      
+      // 确保目录存在
+      await fs.mkdir(mrDir, { recursive: true });
+      
+      // 生成文件名
+      const suffix = chunkIndex !== null ? `_chunk_${chunkIndex}` : '';
+      const requestFileName = `request_al_${this.requestCounter}${suffix}.json`;
+      const responseFileName = `response_al_${this.requestCounter}${suffix}.json`;
+      
+      // 保存请求数据
+      const requestPath = path.join(mrDir, requestFileName);
+      await fs.writeFile(requestPath, JSON.stringify(requestData, null, 2), 'utf8');
+      
+      // 保存响应数据
+      const responsePath = path.join(mrDir, responseFileName);
+      await fs.writeFile(responsePath, JSON.stringify(responseData, null, 2), 'utf8');
+      
+      console.log(`💾 已保存请求响应: ${requestFileName}, ${responseFileName}`);
+      
+    } catch (error) {
+      console.warn('⚠️ 保存请求响应失败:', error.message);
+    }
+  }
+
+  /**
    * 主要的代码分析方法
    */
   async analyzeCodeChanges(diff, mrDetails) {
@@ -154,9 +197,10 @@ class AliyunBailianAnalyzer {
     const chunks = this.chunkDiff(diff);
     const analyses = [];
     
-    for (const chunk of chunks) {
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
       const chunkPrompt = this.buildChunkPrompt(chunk, mrDetails);
-      const chunkResult = await this.callBailianAPI(chunkPrompt);
+      const chunkResult = await this.callBailianAPI(chunkPrompt, 1, i + 1); // 传递分块索引
       analyses.push(chunkResult);
     }
     
@@ -185,7 +229,7 @@ class AliyunBailianAnalyzer {
   /**
    * 调用阿里云百炼API（带重试机制）
    */
-  async callBailianAPI(prompt, attempt = 1) {
+  async callBailianAPI(prompt, attempt = 1, chunkIndex = null) {
     const { api_key, model, base_url, max_tokens, temperature, timeout } = this.bailianConfig;
     
     const requestBody = {
@@ -217,7 +261,7 @@ class AliyunBailianAnalyzer {
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     try {
-      console.log(`🔄 调用阿里云百炼API (尝试 ${attempt}/${this.retryAttempts})`);
+      console.log(`🔄 调用阿里云百炼API (尝试 ${attempt}/${this.retryAttempts})${chunkIndex !== null ? ` - 分块 ${chunkIndex}` : ''}`);
       
       const response = await fetch(`${base_url}/services/aigc/text-generation/generation`, {
         method: 'POST',
@@ -243,6 +287,9 @@ class AliyunBailianAnalyzer {
         throw new Error(`API错误: ${result.code} - ${result.message}`);
       }
       
+      // 保存请求和响应数据
+      await this.saveRequestResponse(requestBody, result, chunkIndex);
+      
       console.log('✅ 阿里云百炼API调用成功');
       return this.parseAPIResponse(result);
       
@@ -257,7 +304,7 @@ class AliyunBailianAnalyzer {
       if (attempt < this.retryAttempts && this.shouldRetry(error)) {
         console.warn(`⚠️ API调用失败，${this.retryDelay}ms后重试: ${error.message}`);
         await this.delay(this.retryDelay * attempt); // 指数退避
-        return this.callBailianAPI(prompt, attempt + 1);
+        return this.callBailianAPI(prompt, attempt + 1, chunkIndex);
       }
       
       throw error;

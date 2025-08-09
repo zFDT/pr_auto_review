@@ -1,0 +1,127 @@
+{
+  "msg_type": "interactive",
+  "card": {
+    "config": {
+      "wide_screen_mode": true,
+      "enable_forward": true
+    },
+    "header": {
+      "template": "yellow",
+      "title": {
+        "content": "📋 ZM App - PR #177 评审完成",
+        "tag": "plain_text"
+      }
+    },
+    "elements": [
+      {
+        "tag": "div",
+        "text": {
+          "content": "**🎯 Wxz/模型库**\n👤 **提交者**: zhanghongxin2\n🌿 **分支**: `wxz/模型库` → `feat_V0.2.1`\n⏰ **时间**: 2025/8/9 14:42:28",
+          "tag": "lark_md"
+        }
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "div",
+        "fields": [
+          {
+            "is_short": true,
+            "text": {
+              "content": "**📁 文件数量**\n26 🔴 较多",
+              "tag": "lark_md"
+            }
+          },
+          {
+            "is_short": true,
+            "text": {
+              "content": "**📊 代码变更**\n+365/-376 🟢 正常范围",
+              "tag": "lark_md"
+            }
+          }
+        ]
+      },
+      {
+        "tag": "div",
+        "text": {
+          "content": "**🤖 AI评分**: 🟡 7/10",
+          "tag": "lark_md"
+        }
+      },
+      {
+        "tag": "div",
+        "text": {
+          "content": "**📋 评估总结**\n共分析 6 个代码块，发现 56 个问题，40 条建议。总体评分 7.0/10，风险等级：medium",
+          "tag": "lark_md"
+        }
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "div",
+        "text": {
+          "content": "**⚠️ 主要问题**\n• lib/page/me/account_security/user_profile_webview_page.dart: 包含 console.log 语句，建议移除或使用日志库\n• lib/page/me/account_security/user_profile_webview_page.dart: 包含 2 个待完成标记 (TODO, TODO)\n• - `lib/api/user_api.dart` 中缺少对 `updateUserInfo` 方法的文档说明。\n• - `lib/bean/devices/devices_light_bean.dart` 中的作者信息和日期应该放在文件顶部，而不是中间位置。\n• - `lib/page/device/device_control_page/device_control_child_page/device_control_chlid_view.dart` 中的 `FocusNode` 创建方式可以简化。",
+          "tag": "lark_md"
+        }
+      },
+      {
+        "tag": "div",
+        "text": {
+          "content": "**💡 改进建议**\n• - 在 `updateUserInfo` 方法上方添加详细的文档说明，包括参数、返回值和异常情况。\n• - 将 `lib/bean/devices/devices_light_bean.dart` 中的作者信息和日期移动到文件顶部。\n• - 简化 `lib/page/device/device_control_page/device_control_child_page/device_control_chlid_view.dart` 中的 `FocusNode` 创建方式，直接使用 `FocusScope.of(context).unfocus()`。",
+          "tag": "lark_md"
+        }
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "action",
+        "actions": [
+          {
+            "tag": "button",
+            "text": {
+              "content": "查看 MR",
+              "tag": "plain_text"
+            },
+            "type": "primary",
+            "url": "https://git.dreame.tech/fdm_printer/zm_app/-/merge_requests/177"
+          },
+          {
+            "tag": "button",
+            "text": {
+              "content": "📄 下载报告",
+              "tag": "plain_text"
+            },
+            "type": "default",
+            "url": "http://localhost:8899/reports/177/review_git_177.txt"
+          }
+        ]
+      },
+      {
+        "tag": "action",
+        "actions": [
+          {
+            "tag": "button",
+            "text": {
+              "content": "Jenkins 构建",
+              "tag": "plain_text"
+            },
+            "type": "default",
+            "url": "http://jenkins.atomverse.com.cn:8080/job/APP_revicew/latest/console"
+          },
+          {
+            "tag": "button",
+            "text": {
+              "content": "🌐 PR 查看",
+              "tag": "plain_text"
+            },
+            "type": "default",
+            "url": "https://git.dreame.tech/fdm_printer/zm_app/-/merge_requests/177"
+          }
+        ]
+      }
+    ]
+  }
+}

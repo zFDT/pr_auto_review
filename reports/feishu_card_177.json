@@ -1,0 +1,127 @@
+{
+  "msg_type": "interactive",
+  "card": {
+    "config": {
+      "wide_screen_mode": true,
+      "enable_forward": true
+    },
+    "header": {
+      "template": "yellow",
+      "title": {
+        "content": "📋 ZM App - PR #177 评审完成",
+        "tag": "plain_text"
+      }
+    },
+    "elements": [
+      {
+        "tag": "div",
+        "text": {
+          "content": "**🎯 Wxz/模型库**\n👤 **提交者**: zhanghongxin2\n🌿 **分支**: `wxz/模型库` → `feat_V0.2.1`\n⏰ **时间**: 2025/8/8 16:13:04",
+          "tag": "lark_md"
+        }
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "div",
+        "fields": [
+          {
+            "is_short": true,
+            "text": {
+              "content": "**📁 文件数量**\n26 🔴 较多",
+              "tag": "lark_md"
+            }
+          },
+          {
+            "is_short": true,
+            "text": {
+              "content": "**📊 代码变更**\n+365/-376 🟢 正常范围",
+              "tag": "lark_md"
+            }
+          }
+        ]
+      },
+      {
+        "tag": "div",
+        "text": {
+          "content": "**🤖 AI评分**: 🟡 7/10",
+          "tag": "lark_md"
+        }
+      },
+      {
+        "tag": "div",
+        "text": {
+          "content": "**📋 评估总结**\n共分析 6 个代码块，发现 55 个问题，45 条建议。总体评分 7.0/10，风险等级：medium",
+          "tag": "lark_md"
+        }
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "div",
+        "text": {
+          "content": "**⚠️ 主要问题**\n• lib/page/me/account_security/user_profile_webview_page.dart: 包含 console.log 语句，建议移除或使用日志库\n• lib/page/me/account_security/user_profile_webview_page.dart: 包含 2 个待完成标记 (TODO, TODO)\n• - `lib/api/user_api.dart` 文件缺少对新添加的方法 `updateUserInfo` 的描述。\n• - `lib/bean/devices/devices_light_bean.dart` 文件中的注释位置不一致，影响可读性。\n• - `lib/bean/devices/devices_run_data_bean.dart` 文件中的多行注释应改为单行注释以保持一致性。",
+          "tag": "lark_md"
+        }
+      },
+      {
+        "tag": "div",
+        "text": {
+          "content": "**💡 改进建议**\n• - 在 `UserApi` 类中为 `updateUserInfo` 方法添加详细的文档说明。\n• - 将 `lib/bean/devices/devices_light_bean.dart` 文件中的注释移到文件顶部，与 `DevicesRunDataBean` 保持一致。\n• - 将 `lib/bean/devices/devices_run_data_bean.dart` 文件中的多行注释改为单行注释。",
+          "tag": "lark_md"
+        }
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "action",
+        "actions": [
+          {
+            "tag": "button",
+            "text": {
+              "content": "查看 MR",
+              "tag": "plain_text"
+            },
+            "type": "primary",
+            "url": "https://git.dreame.tech/fdm_printer/zm_app/-/merge_requests/177"
+          },
+          {
+            "tag": "button",
+            "text": {
+              "content": "📄 下载报告",
+              "tag": "plain_text"
+            },
+            "type": "default",
+            "url": "http://localhost:8899/reports/review_git_177.txt"
+          }
+        ]
+      },
+      {
+        "tag": "action",
+        "actions": [
+          {
+            "tag": "button",
+            "text": {
+              "content": "Jenkins 构建",
+              "tag": "plain_text"
+            },
+            "type": "default",
+            "url": "http://jenkins.atomverse.com.cn:8080/job/APP_revicew/45/console"
+          },
+          {
+            "tag": "button",
+            "text": {
+              "content": "🌐 PR 查看",
+              "tag": "plain_text"
+            },
+            "type": "default",
+            "url": "https://git.dreame.tech/fdm_printer/zm_app/-/merge_requests/177"
+          }
+        ]
+      }
+    ]
+  }
+}

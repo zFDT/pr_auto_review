@@ -102,35 +102,44 @@ log "启动评审分析..."
 if node pr-reviewer.js "$PROJECT_NAME" "$MR_NUMBER"; then
     log "评审完成！"
     
-    # 显示生成的报告文件
-    REPORT_FILE="reports/review_git_${MR_NUMBER}.txt"
-    JSON_FILE="reports/feishu_card_${MR_NUMBER}.json"
+    # 显示生成的报告文件（使用新的文件夹结构）
+    MR_DIR="reports/${MR_NUMBER}"
+    REPORT_FILE=$(find "$MR_DIR" -name "review_git_${MR_NUMBER}_*.txt" -type f | head -1)
+    JSON_FILE="$MR_DIR/feishu_card_${MR_NUMBER}.json"
     
     if [ -f "$REPORT_FILE" ]; then
-        info "报告文件: $REPORT_FILE"
+        info "📄 报告文件: $REPORT_FILE"
         
         # 获取本机IP地址并生成HTTP链接
         LOCAL_IP=$(get_local_ip)
         FILE_SERVER_PORT=8899
-        FILENAME=$(basename "$REPORT_FILE")
-        HTTP_URL="http://${LOCAL_IP}:${FILE_SERVER_PORT}/reports/${FILENAME}"
+        RELATIVE_PATH=$(echo "$REPORT_FILE" | sed "s|reports/||")
+        HTTP_URL="http://${LOCAL_IP}:${FILE_SERVER_PORT}/reports/${RELATIVE_PATH}"
         
         echo
-        echo "🌐 在线访问链接: $HTTP_URL"
+        echo "🌐 在线查看: $HTTP_URL"
         echo "📋 可复制分享的链接: $HTTP_URL"
         echo
         echo "📋 评审报告摘要:"
         head -20 "$REPORT_FILE"
         echo "..."
         echo
-        info "查看完整报告: cat $REPORT_FILE"
+        info "查看完整报告: cat \"$REPORT_FILE\""
         
         # 如果JSON文件也存在，显示信息
         if [ -f "$JSON_FILE" ]; then
-            info "飞书卡片数据: $JSON_FILE"
-            JSON_FILENAME=$(basename "$JSON_FILE")
-            JSON_HTTP_URL="http://${LOCAL_IP}:${FILE_SERVER_PORT}/reports/${JSON_FILENAME}"
-            info "JSON数据链接: $JSON_HTTP_URL"
+            info "📱 飞书数据: $JSON_FILE"
+            JSON_RELATIVE_PATH=$(echo "$JSON_FILE" | sed "s|reports/||")
+            JSON_HTTP_URL="http://${LOCAL_IP}:${FILE_SERVER_PORT}/reports/${JSON_RELATIVE_PATH}"
+            info "📊 JSON数据: $JSON_HTTP_URL"
+        fi
+        
+        # 显示AI分析请求响应文件
+        REQUEST_FILES=$(find "$MR_DIR" -name "request_al_*.json" -type f | wc -l | tr -d ' ')
+        RESPONSE_FILES=$(find "$MR_DIR" -name "response_al_*.json" -type f | wc -l | tr -d ' ')
+        if [ "$REQUEST_FILES" -gt 0 ]; then
+            info "🤖 AI请求文件: $REQUEST_FILES 个"
+            info "🤖 AI响应文件: $RESPONSE_FILES 个"
         fi
         
         # 显示文件大小信息
@@ -141,7 +150,7 @@ if node pr-reviewer.js "$PROJECT_NAME" "$MR_NUMBER"; then
         echo
         info "💡 提示: 如需发送飞书通知，请确保配置了 FEISHU_WEBHOOK_URL 环境变量"
     else
-        warn "未找到报告文件: $REPORT_FILE"
+        warn "未找到报告文件: reports/${MR_NUMBER}/review_git_${MR_NUMBER}_*.txt"
     fi
 else
     error "评审失败，请检查错误信息"

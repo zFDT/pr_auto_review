@@ -1,0 +1,22 @@
+{
+  "model": "qwen-max",
+  "input": {
+    "messages": [
+      {
+        "role": "system",
+        "content": "你是一个资深的代码审查专家，拥有10年以上的软件开发和代码质量评估经验。你精通多种编程语言和框架，善于发现潜在问题并提供实用的改进建议。\n\n🎯 **核心职责：**\n1. 深度分析代码变更的技术质量和业务逻辑\n2. 精准识别bug、性能瓶颈、安全漏洞和设计缺陷\n3. 提供具体、可执行、优先级明确的改进方案\n4. 评估代码的可维护性、可扩展性和团队协作友好度\n5. 确保代码符合行业最佳实践和团队规范\n\n💡 **分析原则：**\n- 优先关注功能正确性和安全性问题\n- 平衡代码质量和开发效率\n- 提供建设性而非批评性的反馈\n- 考虑代码的上下文和业务场景\n- 识别重构机会和技术债务\n\n📋 **输出要求：**\n请用专业、简洁的中文回复，避免冗长的理论阐述，专注于实际可执行的建议。"
+      },
+      {
+        "role": "user",
+        "content": "请对以下代码变更进行专业的代码审查：\n\n📋 **MR信息**\n- 标题: Wxz/模型库\n- 描述: 无描述\n- 文件数量: 4\n\n📝 **代码变更**\n📁 lib/api/user_api.dart (修改文件)\n@@ -31,6 +31,8 @@ class UserApi {\n   static final userCertUrlUS = '/api/3dprint/file/v1/server-root-cert';\n   // 获取aws kvs临时凭证\n   static final awsTempRoleTokenUrl = '/api/3dprint/file/v1/aws/get/tempToken';\n+  //同步用户信息\n+  static final updateUserInfoUrl = '/api/3dprint/user/casdoor/user/sync/user/info';\n\n   /// 请求获取Casdoor的用户信息\n@@ -65,4 +67,13 @@ class UserApi {\n       return null;\n     }\n   }\n+\n+  static Future<dynamic> updateUserInfo() async {\n+    try {\n+      var res =  NetworkManager.instance.postAsyncResult(updateUserInfoUrl,showErrorTip: false);\n+      return res;\n+    } catch (e) {\n+      return null;\n+    }\n+  }\n }\n\n\n==================================================\n\n📁 lib/bean/devices/devices_light_bean.dart (修改文件)\n@@ -1,10 +1,10 @@\n-///@Author: zhanghongxin2\n-///@Date: 2025/5/8 17:06\n-///@Description:\n-import 'package:json_annotation/json_annotation.dart';\n \n+import 'package:json_annotation/json_annotation.dart';\n part 'devices_light_bean.g.dart';\n \n+///@Author: zhanghongxin2\n+///@Date: 2025/5/8 17:06\n+///@Description:\n @JsonSerializable()\n class DevicesLightBean {\n   @JsonKey(name: \"light_chassis\")\n\n\n==================================================\n\n📁 lib/bean/devices/devices_run_data_bean.dart (修改文件)\n@@ -8,11 +8,9 @@ import 'machine_ext_fil_box_bean.dart';\n import 'machine_temperature_information_bean.dart';\n import 'mqtt_fan_bean.dart';\n \n-/**\n- * 机器运行状态信息（这里的状态都是在连接上机器后才可以获取到的)\n- * 这是本地维护的每个机器的状态bean集合，有需要什么状态请在在里面定义，然后后续进行赋值后对应更新UI\n- * 记得每个相关的参数都需要进行注释\n- */\n+/// 机器运行状态信息（这里的状态都是在连接上机器后才可以获取到的)\n+/// 这是本地维护的每个机器的状态bean集合，有需要什么状态请在在里面定义，然后后续进行赋值后对应更新UI\n+/// 记得每个相关的参数都需要进行注释\n class DevicesRunDataBean {\n   // cmd命令显示行的存储list\n   final List<MsgBean> _cmdMsgList = <MsgBean>[];\n\n\n==================================================\n\n📁 lib/page/device/device_control_page/device_control_child_page/device_control_chlid_view.dart (修改文件)\n@@ -140,7 +140,7 @@ class DeviceControlChildPageView extends StatelessWidget {\n                                 onTargetTempChanged(newValue);\n                               }\n                               //将键盘消失\n-                              FocusScope.of(context).requestFocus(new FocusNode());\n+                              FocusScope.of(context).requestFocus(FocusNode());\n                               Get.back();\n                             },\n                             child: Text(\"确定\")))\n\n\n🔍 **请从以下维度进行详细分析：**\n\n1. **代码质量** (权重: 25%)\n   - 代码风格和规范性\n   - 函数和类的设计合理性\n   - 注释和文档完整性\n   \n2. **功能正确性** (权重: 30%)\n   - 逻辑错误检测\n   - 边界条件处理\n   - 异常处理机制\n   \n3. **安全性** (权重: 20%)\n   - 安全漏洞识别\n   - 数据验证和过滤\n   - 权限控制检查\n   \n4. **性能** (权重: 15%)\n   - 算法复杂度分析\n   - 内存使用优化\n   - 数据库查询效率\n   \n5. **可维护性** (权重: 10%)\n   - 代码复杂度\n   - 模块化程度\n   - 测试覆盖率\n\n📊 **输出格式：**\n请按照以下格式提供分析报告：\n\n## 总体评分\n- 综合评分: X/10分\n- 风险等级: [低/中/高]\n\n## 详细分析\n### ✅ 优点\n- [列出代码的优点]\n\n### ⚠️ 问题发现\n- [按严重程度列出问题]\n\n### 💡 改进建议\n- [提供具体的改进建议]\n\n### 🔒 安全建议\n- [如有安全相关建议]\n\n## 总结\n[简要总结本次代码审查的核心发现和建议]"
+      }
+    ]
+  },
+  "parameters": {
+    "max_tokens": 8192,
+    "temperature": 0.1,
+    "result_format": "message",
+    "top_p": 0.8,
+    "repetition_penalty": 1.05
+  }
+}

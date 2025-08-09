@@ -1388,15 +1388,18 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
    */
   async saveReportToFile(report) {
     try {
-      // 确保reports目录存在
+      // 生成MR专属目录
+      const mrIid = global.currentMrIid || 'unknown';
       const reportsDir = path.join(__dirname, 'reports');
-      await fs.mkdir(reportsDir, { recursive: true });
+      const mrDir = path.join(reportsDir, mrIid.toString());
+      
+      // 确保目录存在
+      await fs.mkdir(mrDir, { recursive: true });
       
       // 生成文件名
-      const mrIid = global.currentMrIid || 'unknown';
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const fileName = `review_git_${mrIid}_${timestamp}.txt`;
-      const filePath = path.join(reportsDir, fileName);
+      const filePath = path.join(mrDir, fileName);
       
       // 写入文件
       await fs.writeFile(filePath, report, 'utf8');
@@ -1602,8 +1605,8 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
     const ip = this.getLocalIP();
     const reportFileName = `review_git_${mrIid}.txt`;
     const jsonFileName = `feishu_card_${mrIid}.json`;
-    const reportDownloadUrl = `http://${ip}:${CONSTANTS.HTTP_SERVER_PORT}/reports/${reportFileName}`;
-    const jsonDownloadUrl = `http://${ip}:${CONSTANTS.HTTP_SERVER_PORT}/reports/${jsonFileName}`;
+    const reportDownloadUrl = `http://${ip}:${CONSTANTS.HTTP_SERVER_PORT}/reports/${mrIid}/${reportFileName}`;
+    const jsonDownloadUrl = `http://${ip}:${CONSTANTS.HTTP_SERVER_PORT}/reports/${mrIid}/${jsonFileName}`;
     
     cardData.card.elements.push({
       tag: "action",
@@ -1663,10 +1666,16 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
    * @returns {Promise<string>} 文件路径
    */
   async saveFeishuCardData(cardData) {
-    const outputDir = path.join(__dirname, 'reports');
+    // 生成MR专属目录
     const mrIidValue = global.currentMrIid || '0';
+    const reportsDir = path.join(__dirname, 'reports');
+    const mrDir = path.join(reportsDir, mrIidValue.toString());
+    
+    // 确保目录存在
+    await fs.mkdir(mrDir, { recursive: true });
+    
     const fileName = `feishu_card_${mrIidValue}.json`;
-    const filePath = path.join(outputDir, fileName);
+    const filePath = path.join(mrDir, fileName);
     
     await fs.writeFile(filePath, JSON.stringify(cardData, null, 2), 'utf8');
     return path.resolve(filePath);
@@ -1859,8 +1868,9 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
   generateFileURL(filePath) {
     try {
       const ip = this.getLocalIP();
-      const relativePath = path.relative(__dirname, filePath);
-      return `http://${ip}:${CONSTANTS.HTTP_SERVER_PORT}/${relativePath}`;
+      const reportsDir = path.join(__dirname, 'reports');
+      const relativePath = path.relative(reportsDir, filePath);
+      return `http://${ip}:${CONSTANTS.HTTP_SERVER_PORT}/reports/${relativePath}`;
     } catch (error) {
       this.logger.warn('生成URL失败', error);
       return filePath;
