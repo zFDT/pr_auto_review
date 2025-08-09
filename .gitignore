@@ -18,8 +18,8 @@ logs/
 temp/
 tmp/
 
-# 报告文件（可选择性忽略）
-# reports/
+# 报告文件
+reports/
 
 # 系统文件
 .DS_Store
