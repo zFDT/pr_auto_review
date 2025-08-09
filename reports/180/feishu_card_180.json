@@ -1,0 +1,136 @@
+{
+  "msg_type": "interactive",
+  "card": {
+    "config": {
+      "wide_screen_mode": true,
+      "enable_forward": true
+    },
+    "header": {
+      "template": "green",
+      "title": {
+        "content": "📋 ZM App - PR #180 评审完成",
+        "tag": "plain_text"
+      }
+    },
+    "elements": [
+      {
+        "tag": "div",
+        "text": {
+          "content": "**🎯 feat: 测试IP获取和UTF-8编码修复**\n👤 **提交者**: test-user\n🌿 **分支**: `feature/fix-ip-utf8` → `master`\n⏰ **时间**: 2025/8/9 16:30:46",
+          "tag": "lark_md"
+        }
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "div",
+        "fields": [
+          {
+            "is_short": true,
+            "text": {
+              "content": "**📁 文件数量**\n2 🟢 合理",
+              "tag": "lark_md"
+            }
+          },
+          {
+            "is_short": true,
+            "text": {
+              "content": "**📊 代码变更**\n+15/-5 🟢 正常范围",
+              "tag": "lark_md"
+            }
+          }
+        ]
+      },
+      {
+        "tag": "div",
+        "text": {
+          "content": "**🤖 AI评分**: 🟢 8/10",
+          "tag": "lark_md"
+        }
+      },
+      {
+        "tag": "div",
+        "text": {
+          "content": "**📋 评估总结**\nIP获取逻辑优化，文件服务器支持UTF-8编码，提升用户体验。",
+          "tag": "lark_md"
+        }
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "div",
+        "text": {
+          "content": "**⚠️ 主要问题**\n• 需要验证IP获取逻辑\n• 检查UTF-8编码支持\n• 需要测试不同网络环境\n• 确保跨平台兼容性",
+          "tag": "lark_md"
+        }
+      },
+      {
+        "tag": "div",
+        "text": {
+          "content": "**💡 改进建议**\n• 添加IP获取失败的兜底方案\n• 增加编码检测功能",
+          "tag": "lark_md"
+        }
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "action",
+        "actions": [
+          {
+            "tag": "button",
+            "text": {
+              "content": "查看 MR",
+              "tag": "plain_text"
+            },
+            "type": "primary",
+            "url": "https://git.dreame.tech/fdm_printer/zm_app/-/merge_requests/180"
+          },
+          {
+            "tag": "button",
+            "text": {
+              "content": "🌐 PR 查看",
+              "tag": "plain_text"
+            },
+            "type": "default",
+            "url": "https://git.dreame.tech/fdm_printer/zm_app/-/merge_requests/180"
+          },
+          {
+            "tag": "button",
+            "text": {
+              "content": "Jenkins 构建",
+              "tag": "plain_text"
+            },
+            "type": "default",
+            "url": "http://jenkins.atomverse.com.cn:8080/job/APP_revicew/latest/console"
+          }
+        ]
+      },
+      {
+        "tag": "action",
+        "actions": [
+          {
+            "tag": "button",
+            "text": {
+              "content": "📄 下载报告",
+              "tag": "plain_text"
+            },
+            "type": "default",
+            "url": "http://172.27.53.1:8899/reports/180/review_git_180_2025-08-09T08-30-46-303Z.txt"
+          },
+          {
+            "tag": "button",
+            "text": {
+              "content": "📂 流程产物",
+              "tag": "plain_text"
+            },
+            "type": "default",
+            "url": "http://172.27.53.1:8899/reports/180/"
+          }
+        ]
+      }
+    ]
+  }
+}

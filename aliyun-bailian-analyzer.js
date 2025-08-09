@@ -345,70 +345,7 @@ class AliyunBailianAnalyzer {
     console.log(`📋 本次总计Token: ${sessionTokensUsed.totalTokens.toLocaleString()}`);
     console.log(`📈 累计总Token使用: ${this.tokenStats.totalTokens.toLocaleString()}`);
     console.log(`⚡ 平均每次请求Token: ${Math.round(this.tokenStats.averageTokensPerRequest).toLocaleString()}`);
-    
-    // 尝试获取账户token使用情况
-    console.log('\n🔍 正在查询账户Token使用情况...');
-    try {
-      const accountUsage = await this.getAccountTokenUsage();
-      if (accountUsage) {
-        console.log('💰 账户Token使用情况:');
-        
-        // 处理标准的配额信息
-        if (accountUsage.quota_limit) {
-          console.log(`📊 配额限制: ${accountUsage.quota_limit.toLocaleString()}`);
-        }
-        if (accountUsage.quota_used) {
-          console.log(`📈 已使用配额: ${accountUsage.quota_used.toLocaleString()}`);
-        }
-        if (accountUsage.quota_remaining) {
-          console.log(`💎 剩余配额: ${accountUsage.quota_remaining.toLocaleString()}`);
-        }
-        if (accountUsage.quota_limit && accountUsage.quota_used) {
-          const remaining = accountUsage.quota_limit - accountUsage.quota_used;
-          const usagePercent = ((accountUsage.quota_used / accountUsage.quota_limit) * 100).toFixed(2);
-          console.log(`📊 配额使用率: ${usagePercent}%`);
-          console.log(`💎 估算剩余Token: ${remaining.toLocaleString()}`);
-        }
-
-        // 处理rate limiting信息
-        if (accountUsage.rate_limit_info) {
-          const rateInfo = accountUsage.rate_limit_info;
-          console.log('🚦 Rate Limiting信息:');
-          if (rateInfo.remaining) {
-            console.log(`🔄 剩余请求数: ${rateInfo.remaining}`);
-          }
-          if (rateInfo.limit) {
-            console.log(`📏 请求限制: ${rateInfo.limit}`);
-          }
-          if (rateInfo.tokensRemaining) {
-            console.log(`💎 剩余Token数: ${parseInt(rateInfo.tokensRemaining).toLocaleString()}`);
-          }
-          if (rateInfo.tokensLimit) {
-            console.log(`📊 Token限制: ${parseInt(rateInfo.tokensLimit).toLocaleString()}`);
-          }
-          if (rateInfo.resetTime) {
-            const resetDate = new Date(parseInt(rateInfo.resetTime) * 1000);
-            console.log(`⏰ 限制重置时间: ${resetDate.toLocaleString('zh-CN')}`);
-          }
-        }
-
-        // 处理其他格式的使用信息
-        if (accountUsage.total_tokens) {
-          console.log(`📋 总Token使用: ${accountUsage.total_tokens.toLocaleString()}`);
-        }
-        if (accountUsage.tokens_left) {
-          console.log(`💎 剩余Token: ${accountUsage.tokens_left.toLocaleString()}`);
-        }
-        
-      } else {
-        console.log('ℹ️ 账户Token使用情况查询不可用（API不支持或需要特殊权限）');
-        console.log('📝 仅显示本次会话统计信息');
-        console.log('💡 提示: 阿里云百炼可能不公开提供剩余Token查询接口');
-      }
-    } catch (error) {
-      console.log(`⚠️ 获取账户Token使用情况失败: ${error.message}`);
-    }
-    console.log('');
+  
     
     return {
       status: 'success',

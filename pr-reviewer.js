@@ -37,6 +37,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
+import { networkInterfaces } from 'os';
 
 // 获取脚本所在目录
 const __filename = fileURLToPath(import.meta.url);
@@ -1604,20 +1605,22 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
     
     // 生成报告和JSON文件的下载链接
     const ip = this.getLocalIP();
-    let reportDownloadUrl, jsonDownloadUrl;
+    let reportDownloadUrl, reportFolderUrl;
     
     if (reportFilePath) {
       // 使用实际的文件路径生成URL
       reportDownloadUrl = this.generateFileURL(reportFilePath);
+      // 生成报告文件夹的URL (流程产物)
+      const mrDir = path.dirname(reportFilePath);
+      reportFolderUrl = this.generateFileURL(mrDir + '/');
     } else {
       // 回退到原来的逻辑
       const reportFileName = `review_git_${mrIid}.txt`;
       reportDownloadUrl = `http://${ip}:${CONSTANTS.HTTP_SERVER_PORT}/reports/${mrIid}/${reportFileName}`;
+      reportFolderUrl = `http://${ip}:${CONSTANTS.HTTP_SERVER_PORT}/reports/${mrIid}/`;
     }
     
-    const jsonFileName = `feishu_card_${mrIid}.json`;
-    jsonDownloadUrl = `http://${ip}:${CONSTANTS.HTTP_SERVER_PORT}/reports/${mrIid}/${jsonFileName}`;
-    
+    // 第一行按钮：查看MR、PR查看、Jenkins构建
     cardData.card.elements.push({
       tag: "action",
       actions: [
@@ -1633,37 +1636,46 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
         {
           tag: "button",
           text: {
+            content: "🌐 PR 查看",
+            tag: "plain_text"
+          },
+          type: "default",
+          url: mrDetails.web_url
+        },
+        {
+          tag: "button",
+          text: {
+            content: "Jenkins 构建",
+            tag: "plain_text"
+          },
+          type: "default",
+          url: `http://jenkins.atomverse.com.cn:8080/job/APP_revicew/${process.env.BUILD_NUMBER || 'latest'}/console`
+        }
+      ]
+    });
+    
+    // 第二行按钮：下载报告、流程产物
+    cardData.card.elements.push({
+      tag: "action",
+      actions: [
+        {
+          tag: "button",
+          text: {
             content: "📄 下载报告",
             tag: "plain_text"
           },
           type: "default",
           url: reportDownloadUrl
+        },
+        {
+          tag: "button",
+          text: {
+            content: "📂 流程产物",
+            tag: "plain_text"
+          },
+          type: "default",
+          url: reportFolderUrl
         }
-      ]
-    });
-    
-    // 添加第二行按钮
-    cardData.card.elements.push({
-      tag: "action",
-      actions: [
-      {
-        tag: "button",
-        text: {
-        content: "Jenkins 构建",
-        tag: "plain_text"
-        },
-        type: "default",
-        url: `http://jenkins.atomverse.com.cn:8080/job/APP_revicew/${process.env.BUILD_NUMBER || 'latest'}/console`
-      },
-      {
-        tag: "button",
-        text: {
-        content: "🌐 PR 查看",
-        tag: "plain_text"
-        },
-        type: "default",
-        url: mrDetails.web_url
-      }
       ]
     });
     
@@ -1879,7 +1891,18 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
     try {
       const ip = this.getLocalIP();
       const reportsDir = path.join(__dirname, 'reports');
-      const relativePath = path.relative(reportsDir, filePath);
+      let relativePath = path.relative(reportsDir, filePath);
+      
+      // 处理文件夹路径，确保以 / 结尾
+      if (filePath.endsWith('/') || filePath.endsWith('\\')) {
+        if (!relativePath.endsWith('/')) {
+          relativePath += '/';
+        }
+      }
+      
+      // 标准化路径分隔符为正斜杠
+      relativePath = relativePath.replace(/\\/g, '/');
+      
       return `http://${ip}:${CONSTANTS.HTTP_SERVER_PORT}/reports/${relativePath}`;
     } catch (error) {
       this.logger.warn('生成URL失败', error);
@@ -1893,20 +1916,79 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
    */
   getLocalIP() {
     try {
-      const { networkInterfaces } = require('os');
       const nets = networkInterfaces();
       
+      // 添加调试信息
+      if (process.env.DEBUG || global.DEBUG_IP) {
+        console.log('🔍 [DEBUG] 网络接口调试:');
+        for (const name of Object.keys(nets)) {
+          for (const net of nets[name]) {
+            if (net.family === 'IPv4') {
+              console.log(`  ${name}: ${net.address} (内部: ${net.internal})`);
+            }
+          }
+        }
+      }
+      
+      // 优先级：以太网 > Wi-Fi > 其他
+      const priorityOrder = ['以太网', 'Ethernet', 'en0', 'WiFi', 'Wi-Fi', 'wlan0'];
+      
+      // 首先按优先级查找
+      for (const priority of priorityOrder) {
+        if (nets[priority]) {
+          for (const net of nets[priority]) {
+            if (net.family === 'IPv4' && !net.internal) {
+              if (process.env.DEBUG || global.DEBUG_IP) {
+                console.log(`🎯 [DEBUG] 选择优先接口IP: ${net.address} (接口: ${priority})`);
+              }
+              return net.address;
+            }
+          }
+        }
+      }
+      
+      // 如果优先级接口没有找到，遍历所有接口
+      for (const name of Object.keys(nets)) {
+        for (const net of nets[name]) {
+          // 跳过内部地址和IPv6
+          if (net.family === 'IPv4' && !net.internal) {
+            // 优先选择私有网络地址
+            if (net.address.startsWith('192.168.') || 
+                net.address.startsWith('10.') || 
+                net.address.startsWith('172.')) {
+              if (process.env.DEBUG || global.DEBUG_IP) {
+                console.log(`🎯 [DEBUG] 选择私有网络IP: ${net.address} (接口: ${name})`);
+              }
+              return net.address;
+            }
+          }
+        }
+      }
+      
+      // 如果没有找到私有地址，返回第一个非内部IPv4地址
       for (const name of Object.keys(nets)) {
         for (const net of nets[name]) {
           if (net.family === 'IPv4' && !net.internal) {
+            if (process.env.DEBUG || global.DEBUG_IP) {
+              console.log(`🎯 [DEBUG] 选择外部IP: ${net.address} (接口: ${name})`);
+            }
             return net.address;
           }
         }
       }
       
-      return 'localhost';
+      // 最后的回退选项
+      if (process.env.DEBUG || global.DEBUG_IP) {
+        console.log(`⚠️ [DEBUG] 使用回退IP: 127.0.0.1`);
+      }
+      return '127.0.0.1';
     } catch (error) {
-      return 'localhost';
+      if (this.logger) {
+        this.logger.warn('获取本机IP失败', { error: error.message, stack: error.stack });
+      } else {
+        console.warn('获取本机IP失败:', error.message);
+      }
+      return '127.0.0.1';
     }
   }
 

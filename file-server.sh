@@ -73,12 +73,38 @@ start_server() {
     cd "$PROJECT_ROOT"
     
     # 启动Python HTTP服务器并保持运行
-    if command -v python3 >/dev/null 2>&1; then
+    if [ -f "$PROJECT_ROOT/utf8-file-server.py" ]; then
+        log "使用UTF-8文件服务器"
+        nohup python3 "$PROJECT_ROOT/utf8-file-server.py" --port "$SERVER_PORT" --host "$SERVER_HOST" --directory "$PROJECT_ROOT" > "$LOG_FILE" 2>&1 &
+        local server_pid=$!
+        echo $server_pid > "$PID_FILE"
+        log "✅ UTF-8文件服务器已启动，PID: $server_pid"
+        
+        # 等待服务器启动
+        sleep 2
+        if kill -0 "$server_pid" 2>/dev/null; then
+            local local_ip=$(get_local_ip)
+            log "🌐 服务器访问地址:"
+            log "   本地访问: http://localhost:$SERVER_PORT"
+            log "   外部访问: http://$local_ip:$SERVER_PORT"
+            log "   报告目录: http://$local_ip:$SERVER_PORT/reports/"
+        else
+            error "服务器启动失败"
+            rm -f "$PID_FILE"
+            return 1
+        fi
+    elif command -v python3 >/dev/null 2>&1; then
         log "使用Python3启动HTTP服务器"
-        exec python3 -m http.server "$SERVER_PORT" --bind "$SERVER_HOST"
+        nohup python3 -m http.server "$SERVER_PORT" --bind "$SERVER_HOST" > "$LOG_FILE" 2>&1 &
+        local server_pid=$!
+        echo $server_pid > "$PID_FILE"
+        log "✅ HTTP服务器已启动，PID: $server_pid"
     elif command -v python >/dev/null 2>&1; then
         log "使用Python2启动HTTP服务器"
-        exec python -m SimpleHTTPServer "$SERVER_PORT"
+        nohup python -m SimpleHTTPServer "$SERVER_PORT" > "$LOG_FILE" 2>&1 &
+        local server_pid=$!
+        echo $server_pid > "$PID_FILE"
+        log "✅ HTTP服务器已启动，PID: $server_pid"
     else
         error "未找到Python，无法启动文件服务器"
         return 1

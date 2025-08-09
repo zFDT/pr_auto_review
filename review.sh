@@ -39,9 +39,39 @@ show_help() {
 
 # 获取本机IP地址
 get_local_ip() {
-    # 尝试获取非127开头的IP地址
-    local ip=$(ifconfig | grep 'inet ' | grep -v '127.0.0.1' | awk '{print $2}' | head -1)
-    echo ${ip:-"localhost"}
+    # 优先尝试获取以太网和Wi-Fi接口的IP地址
+    local ip=""
+    
+    # 尝试以太网接口
+    ip=$(ifconfig en0 2>/dev/null | grep 'inet ' | grep -v '127.0.0.1' | awk '{print $2}' | head -1)
+    if [ -n "$ip" ]; then
+        echo "$ip"
+        return
+    fi
+    
+    # 尝试Wi-Fi接口
+    ip=$(ifconfig en1 2>/dev/null | grep 'inet ' | grep -v '127.0.0.1' | awk '{print $2}' | head -1)
+    if [ -n "$ip" ]; then
+        echo "$ip"
+        return
+    fi
+    
+    # 尝试其他接口，优先私有网络地址
+    ip=$(ifconfig | grep 'inet ' | grep -v '127.0.0.1' | grep -E '192\.168\.|10\.|172\.' | awk '{print $2}' | head -1)
+    if [ -n "$ip" ]; then
+        echo "$ip"
+        return
+    fi
+    
+    # 最后尝试任何非本地回环地址
+    ip=$(ifconfig | grep 'inet ' | grep -v '127.0.0.1' | awk '{print $2}' | head -1)
+    if [ -n "$ip" ]; then
+        echo "$ip"
+        return
+    fi
+    
+    # 如果都失败，返回127.0.0.1
+    echo "127.0.0.1"
 }
 
 # 参数检查
