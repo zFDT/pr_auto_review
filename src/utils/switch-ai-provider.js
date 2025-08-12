@@ -10,7 +10,7 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import { configLoader } from './config-loader.js';
+import { configLoader } from '../config/config-loader.js';
 
 const SUPPORTED_PROVIDERS = {
   'openai': {

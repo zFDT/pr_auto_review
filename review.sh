@@ -122,14 +122,14 @@ if [ ! -d "node_modules" ]; then
 fi
 
 # 检查配置文件
-if [ ! -f "config.json" ]; then
-    error "未找到config.json配置文件，请先配置项目"
+if [ ! -f "config/config.json" ]; then
+    error "未找到config/config.json配置文件，请先配置项目"
     exit 1
 fi
 
 # 执行评审
 log "启动评审分析..."
-if node pr-reviewer.js "$PROJECT_NAME" "$MR_NUMBER"; then
+if node index.js "$PROJECT_NAME" "$MR_NUMBER"; then
     log "评审完成！"
     
     # 显示生成的报告文件（使用新的文件夹结构）

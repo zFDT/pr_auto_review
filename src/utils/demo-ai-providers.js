@@ -46,13 +46,6 @@ class AIProviderDemo {
       console.log('   ❌ OpenAI - 未配置');
     }
     
-    // 3. 免费AI服务
-    const freeAIConfig = config.ai_config?.free_ai;
-    if (freeAIConfig?.enabled) {
-      console.log('   ✅ 免费AI服务 - 多种免费模型');
-      console.log(`      - 优先级: ${freeAIConfig.priority.join(' > ')}`);
-    }
-    
     console.log('\n🔧 如何配置不同的 AI 提供商:\n');
     
     // 演示配置选项
@@ -73,13 +66,6 @@ class AIProviderDemo {
     console.log('     }');
     console.log('   }');
     console.log('   ```\n');
-    
-    console.log('2️⃣ 使用免费AI (包含阿里云百炼):');
-    console.log('   ```json');
-    console.log('   {');
-    console.log('     "review_settings": {');
-    console.log('       "ai_provider": "free"');
-    console.log('     }');
     console.log('   }');
     console.log('   ```\n');
     
@@ -112,7 +98,6 @@ class AIProviderDemo {
     console.log('   ├─────────────────┼────────────┼─────────────┼─────────────┤');
     console.log('   │ 阿里云百炼      │ 付费       │ 优秀        │ 快速        │');
     console.log('   │ OpenAI GPT-4    │ 付费       │ 优秀        │ 中等        │');
-    console.log('   │ 免费AI (混合)   │ 免费       │ 良好        │ 快速        │');
     console.log('   │ Ollama (本地)   │ 免费       │ 中等        │ 很快        │');
     console.log('   └─────────────────┴────────────┴─────────────┴─────────────┘');
   }

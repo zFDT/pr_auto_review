@@ -8,7 +8,7 @@
  * @version 1.0.0
  */
 
-import { configLoader } from './config-loader.js';
+import { configLoader } from '../config/config-loader.js';
 import fs from 'fs/promises';
 import path from 'path';
 

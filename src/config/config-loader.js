@@ -151,8 +151,8 @@ class ConfigLoader extends EventEmitter {
     
     // 默认配置路径
     this.defaultConfigPaths = [
-      'config.json',
-      'config.local.json',
+      'config/config.json',
+      'config/config.local.json',
       `.env.${process.env.NODE_ENV || 'development'}`,
       '.env.local',
       '.env'
@@ -170,7 +170,7 @@ class ConfigLoader extends EventEmitter {
    */
   async loadEnvFile(envPath = '.env') {
     try {
-      const fullPath = path.resolve(__dirname, envPath);
+      const fullPath = path.resolve(process.cwd(), envPath);
       
       // 检查文件是否存在
       try {
@@ -522,12 +522,12 @@ class ConfigLoader extends EventEmitter {
    * @param {boolean} useCache - 是否使用缓存
    * @returns {Promise<Object>} 加载的配置对象
    */
-  async loadConfig(configPath = 'config.json', useCache = true) {
+  async loadConfig(configPath = 'config/config.json', useCache = true) {
     const startTime = Date.now();
     this.loadStats.totalLoads++;
     
     try {
-      const fullPath = path.resolve(__dirname, configPath);
+      const fullPath = path.resolve(process.cwd(), configPath);
       
       // 检查缓存
       if (useCache && this.configCache.has(fullPath)) {
@@ -629,7 +629,7 @@ class ConfigLoader extends EventEmitter {
       
       try {
         this.logger.info(`尝试备用配置: ${fallbackPath}`);
-        const fullPath = path.resolve(__dirname, fallbackPath);
+        const fullPath = path.resolve(process.cwd(), fallbackPath);
         
         // 检查文件是否存在
         try {
@@ -683,8 +683,8 @@ class ConfigLoader extends EventEmitter {
    * @param {string} configPath - 要监听的配置文件路径
    * @param {Function} callback - 配置变更回调函数
    */
-  async startConfigWatcher(configPath = 'config.json', callback = null) {
-    const fullPath = path.resolve(__dirname, configPath);
+  async startConfigWatcher(configPath = 'config/config.json', callback = null) {
+    const fullPath = path.resolve(process.cwd(), configPath);
     
     try {
       // 检查文件是否存在
@@ -735,8 +735,8 @@ class ConfigLoader extends EventEmitter {
    * 
    * @param {string} configPath - 配置文件路径
    */
-  stopConfigWatcher(configPath = 'config.json') {
-    const fullPath = path.resolve(__dirname, configPath);
+  stopConfigWatcher(configPath = 'config/config.json') {
+    const fullPath = path.resolve(process.cwd(), configPath);
     
     if (this.configWatchers.has(fullPath)) {
       this.configWatchers.get(fullPath).close();

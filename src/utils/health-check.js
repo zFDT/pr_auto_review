@@ -5,7 +5,7 @@
  * 用于检查项目的整体状态和配置
  */
 
-import { configLoader } from './config-loader.js';
+import { configLoader } from '../config/config-loader.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs/promises';

@@ -66,10 +66,6 @@
       "timeout": 60000,
       "fallback_to_openai": true
     },
-    "free_ai": {
-      "enabled": true,
-      "priority": ["ollama", "aliyun_bailian", "groq", "huggingface", "together", "baidu", "tongyi", "static"]
-    },
     "groq": {
       "api_key": "${GROQ_API_KEY}",
       "model": "llama3-8b-8192",
