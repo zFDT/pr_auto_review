@@ -1,0 +1,333 @@
+{
+  "global_review_standards": {
+    "description": "Flutter项目代码审查标准配置 - 专注于GetX状态管理",
+    "version": "2.0.0",
+    "last_updated": "2025-08-12",
+    
+    "system_prompts": {
+      "base_system_prompt": "你是一个专精Flutter开发和GetX状态管理的代码审查专家，拥有丰富的移动应用开发经验。你精通Dart语言、Flutter框架和GetX生态系统，擅长发现Flutter特有的问题并提供实用的改进建议。",
+      
+      "role_definition": {
+        "expertise": [
+          "Flutter架构设计和Widget组件优化",
+          "GetX状态管理、路由和依赖注入最佳实践", 
+          "Dart语言特性和Flutter性能优化",
+          "移动应用UI/UX设计和响应式布局",
+          "Flutter生命周期和内存管理"
+        ],
+        "responsibilities": [
+          "分析Flutter代码的架构设计和组件实现质量",
+          "评估GetX状态管理的使用规范和性能影响",
+          "检查Widget生命周期和资源管理的正确性",
+          "识别Flutter特有的性能瓶颈和内存泄漏",
+          "确保代码符合Flutter最佳实践和GetX规范"
+        ]
+      },
+      
+      "analysis_principles": [
+        "优先关注应用性能和用户体验",
+        "确保GetX状态管理的正确使用",
+        "重视Flutter Widget的复用性和可维护性",
+        "考虑移动设备的资源限制和电池消耗",
+        "保持代码的可测试性和模块化"
+      ]
+    },
+    
+    "analysis_focus_areas": {
+      "widget_design": {
+        "enabled": true,
+        "weight": 30,
+        "items": [
+          "Widget组件的合理拆分和复用",
+          "StatelessWidget vs StatefulWidget的选择",
+          "自定义Widget的性能优化",
+          "Widget树层级和嵌套深度",
+          "UI组件的可测试性设计"
+        ]
+      },
+      
+      "getx_state_management": {
+        "enabled": true,
+        "weight": 35,
+        "items": [
+          "GetxController的正确使用和生命周期管理",
+          "Obx和GetBuilder的合理选择",
+          "响应式变量(.obs)的使用规范",
+          "GetX依赖注入(Get.put, Get.lazyPut)的最佳实践",
+          "GetX路由管理和页面导航"
+        ]
+      },
+      
+      "flutter_performance": {
+        "enabled": true,
+        "weight": 25,
+        "items": [
+          "Widget重建优化和const关键字使用",
+          "列表渲染性能(ListView.builder使用)",
+          "图片加载和缓存策略",
+          "异步操作和Future/Stream处理",
+          "内存泄漏和资源释放"
+        ]
+      },
+      
+      "dart_code_quality": {
+        "enabled": true,
+        "weight": 20,
+        "items": [
+          "Dart语言特性的正确使用",
+          "空安全(Null Safety)的规范应用",
+          "异步编程(async/await)的最佳实践",
+          "扩展方法和Mixin的合理使用",
+          "代码命名规范和可读性"
+        ]
+      },
+      
+      "mobile_specific_concerns": {
+        "enabled": true,
+        "weight": 15,
+        "items": [
+          "平台特定代码的处理",
+          "设备适配和响应式设计",
+          "电池和性能优化",
+          "网络请求和错误处理",
+          "本地存储和数据持久化"
+        ]
+      }
+    },
+    
+    "output_format_requirements": {
+      "structure": "structured_json",
+      "language": "chinese",
+      "style": "professional_concise",
+      "include_examples": true,
+      "max_suggestions_per_category": 5,
+      
+      "required_sections": [
+        "quality_score",
+        "summary",
+        "strengths", 
+        "issues_found",
+        "improvement_suggestions",
+        "security_concerns",
+        "performance_notes"
+      ],
+      
+      "quality_scoring": {
+        "scale": "1-10",
+        "criteria": {
+          "9-10": "优秀 - 代码质量很高，几乎没有问题",
+          "7-8": "良好 - 代码质量较好，有少量改进空间", 
+          "5-6": "一般 - 代码可用但有明显改进空间",
+          "3-4": "需要改进 - 存在较多问题需要修复",
+          "1-2": "需要重构 - 存在严重问题，建议重写"
+        }
+      }
+    }
+  },
+  
+  "language_specific_standards": {
+    "flutter_dart": {
+      "enabled": true,
+      "extends": "global_review_standards", 
+      "config_file": "flutter-review-config.json",
+      "specific_checks": {
+        "widget_lifecycle": "Widget生命周期管理检查",
+        "getx_patterns": "GetX使用模式和最佳实践",
+        "state_management": "状态管理规范性检查",
+        "performance_optimization": "Flutter性能优化检查",
+        "platform_compatibility": "平台兼容性和适配",
+        "ui_consistency": "UI组件一致性和复用性",
+        "dart_conventions": "Dart代码规范和空安全",
+        "async_patterns": "异步编程模式检查",
+        "memory_management": "内存管理和资源释放",
+        "navigation_patterns": "GetX路由和导航规范"
+      },
+      "getx_specific_rules": {
+        "controller_patterns": [
+          "GetxController应继承自GetxController而不是GetxService",
+          "使用onInit()而不是构造函数进行初始化",
+          "在onClose()中释放资源和取消订阅",
+          "避免在Controller中直接操作UI"
+        ],
+        "reactive_programming": [
+          "优先使用.obs变量而不是update()",
+          "合理使用Obx和GetBuilder",
+          "避免过度的响应式变量创建",
+          "使用workers监听变量变化"
+        ],
+        "dependency_injection": [
+          "使用Get.put()进行立即注入",
+          "使用Get.lazyPut()进行懒加载",
+          "正确使用Get.find()获取依赖",
+          "避免循环依赖"
+        ]
+      }
+    }
+  },
+  
+  "project_type_standards": {
+    "flutter_mobile_app": {
+      "enabled": true,
+      "focus_areas": [
+        "用户体验和界面响应性",
+        "GetX状态管理最佳实践",
+        "Widget性能优化和复用",
+        "设备适配和屏幕尺寸兼容",
+        "电池优化和资源管理",
+        "网络请求和数据缓存",
+        "本地存储和数据持久化",
+        "应用生命周期管理",
+        "平台特定功能集成",
+        "应用商店发布规范"
+      ],
+      "getx_architecture_patterns": [
+        "MVC架构模式使用",
+        "页面-控制器分离",
+        "服务层和数据层设计",
+        "全局状态管理策略",
+        "路由和页面导航设计"
+      ]
+    }
+  },
+  
+  "severity_classification": {
+    "critical": {
+      "description": "严重问题，必须修复",
+      "examples": [
+        "安全漏洞",
+        "功能性bug",
+        "数据丢失风险",
+        "系统崩溃可能"
+      ],
+      "action_required": "立即修复"
+    },
+    
+    "major": {
+      "description": "重要问题，强烈建议修复",
+      "examples": [
+        "性能问题",
+        "设计缺陷",
+        "可维护性问题",
+        "不符合规范"
+      ],
+      "action_required": "优先修复"
+    },
+    
+    "minor": {
+      "description": "一般问题，建议改进",
+      "examples": [
+        "代码风格",
+        "命名规范",
+        "注释完善",
+        "小优化点"
+      ],
+      "action_required": "有时间时修复"
+    },
+    
+    "suggestion": {
+      "description": "建议性改进",
+      "examples": [
+        "重构机会",
+        "技术升级",
+        "最佳实践",
+        "经验分享"
+      ],
+      "action_required": "可选择性采纳"
+    }
+  },
+  
+  "ai_provider_specific_config": {
+    "openai": {
+      "temperature": 0.1,
+      "max_tokens": 4000,
+      "model_preferences": ["gpt-4o", "gpt-4", "gpt-3.5-turbo"],
+      "prompt_optimization": "focus_on_conciseness"
+    },
+    
+    "aliyun_bailian": {
+      "temperature": 0.1,
+      "max_tokens": 8192,
+      "model_preferences": ["qwen-max", "qwen-plus"],
+      "prompt_optimization": "chinese_optimization"
+    },
+    
+    "copilot": {
+      "timeout": 60000,
+      "fallback_enabled": true,
+      "integration_mode": "vscode_extension"
+    }
+  },
+  
+  "team_customization": {
+    "custom_rules": {
+      "enabled": true,
+      "description": "Flutter项目自定义审查规则",
+      "rules": [
+        {
+          "name": "禁用print语句",
+          "pattern": "\\bprint\\(",
+          "severity": "minor",
+          "message": "请使用log()或debugPrint()替代print()进行调试输出"
+        },
+        {
+          "name": "GetxController生命周期检查",
+          "pattern": "class\\s+\\w+Controller\\s+extends\\s+GetxController",
+          "severity": "major",
+          "message": "确保Controller实现了onInit()和onClose()方法"
+        },
+        {
+          "name": "Widget const优化",
+          "pattern": "Widget\\s+\\w+\\(",
+          "severity": "minor",
+          "message": "考虑为静态Widget添加const关键字以优化性能"
+        },
+        {
+          "name": "GetX响应式变量检查",
+          "pattern": "\\.value\\s*=",
+          "severity": "minor",
+          "message": "对于.obs变量，建议直接赋值而不是使用.value"
+        },
+        {
+          "name": "TODO标记检查",
+          "pattern": "TODO|FIXME|HACK|XXX",
+          "severity": "minor", 
+          "message": "存在待完成标记，请确认是否需要处理"
+        },
+        {
+          "name": "StatefulWidget检查",
+          "pattern": "class\\s+\\w+\\s+extends\\s+StatefulWidget",
+          "severity": "suggestion",
+          "message": "考虑是否可以使用GetX替代StatefulWidget进行状态管理"
+        }
+      ]
+    },
+    
+    "exclusion_patterns": [
+      "*.g.dart",
+      "*.freezed.dart",
+      "*.gr.dart",
+      "*.config.dart",
+      "build/*",
+      ".dart_tool/*",
+      "android/*",
+      "ios/*",
+      "web/*",
+      "windows/*",
+      "macos/*",
+      "linux/*",
+      ".git/*",
+      "*.log",
+      "pubspec.lock",
+      ".flutter-plugins",
+      ".flutter-plugins-dependencies"
+    ],
+    
+    "flutter_specific_thresholds": {
+      "max_widget_nesting_depth": 7,
+      "max_controller_dependencies": 10,
+      "max_build_method_lines": 100,
+      "max_getx_observers": 5,
+      "performance_widget_rebuild_threshold": "high"
+    }
+  }
+}

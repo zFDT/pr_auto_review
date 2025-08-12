@@ -26,6 +26,7 @@ import fetch from 'node-fetch';
 import fs from 'fs/promises';
 import path from 'path';
 import { createHash } from 'crypto';
+import ReviewStandardsManager from '../utils/review-standards-manager.js';
 
 /**
  * 阿里云百炼分析器类
@@ -35,6 +36,9 @@ class AliyunBailianAnalyzer {
     this.config = config;
     this.bailianConfig = this.getBailianConfig();
     this.isConfigured = this.checkConfiguration();
+    
+    // 初始化Review标准管理器
+    this.reviewStandardsManager = new ReviewStandardsManager();
     
     // 分析缓存配置
     this.analysisCache = new Map();
@@ -279,6 +283,13 @@ class AliyunBailianAnalyzer {
     console.log('🤖 使用阿里云百炼大模型进行代码分析...');
 
     try {
+      // 检测主要编程语言和项目类型
+      const detectedLanguage = this.detectPrimaryLanguage(diff);
+      const projectType = this.detectProjectType(diff, mrDetails);
+      
+      console.log(`🔍 检测到主要语言: ${detectedLanguage || '未知'}`);
+      console.log(`📁 检测到项目类型: ${projectType || '通用'}`);
+      
       // 生成缓存键
       const cacheKey = this.generateCacheKey(diff, mrDetails);
       
@@ -292,8 +303,8 @@ class AliyunBailianAnalyzer {
       // 预处理：过滤和优化diff
       const optimizedDiff = this.preprocessDiff(diff);
       
-      // 构建分析请求
-      const analysisResult = await this.performAnalysis(optimizedDiff, mrDetails);
+      // 构建分析请求（传递语言和项目类型信息）
+      const analysisResult = await this.performAnalysis(optimizedDiff, mrDetails, detectedLanguage, projectType);
       
       // 缓存结果（使用新的缓存机制）
       this.cacheAnalysisResult(cacheKey, analysisResult);
@@ -309,7 +320,7 @@ class AliyunBailianAnalyzer {
   /**
    * 执行实际的分析
    */
-  async performAnalysis(diff, mrDetails) {
+  async performAnalysis(diff, mrDetails, language = null, projectType = null) {
     const analysisPrompt = this.buildAnalysisPrompt(diff, mrDetails);
     
     // 重置本次分析的token统计
@@ -322,7 +333,7 @@ class AliyunBailianAnalyzer {
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
       const chunkPrompt = this.buildChunkPrompt(chunk, mrDetails);
-      const chunkResult = await this.callBailianAPI(chunkPrompt, 1, i + 1); // 传递分块索引
+      const chunkResult = await this.callBailianAPI(chunkPrompt, 1, i + 1, language, projectType); // 传递语言和项目类型
       analyses.push(chunkResult);
     }
     
@@ -373,7 +384,7 @@ class AliyunBailianAnalyzer {
   /**
    * 调用阿里云百炼API（带重试机制）
    */
-  async callBailianAPI(prompt, attempt = 1, chunkIndex = null) {
+  async callBailianAPI(prompt, attempt = 1, chunkIndex = null, language = null, projectType = null) {
     const { api_key, model, base_url, max_tokens, temperature, timeout } = this.bailianConfig;
     
     const requestBody = {
@@ -382,7 +393,7 @@ class AliyunBailianAnalyzer {
         messages: [
           {
             role: 'system',
-            content: this.getSystemPrompt()
+            content: this.getSystemPrompt(language, projectType)
           },
           {
             role: 'user', 
@@ -456,27 +467,14 @@ class AliyunBailianAnalyzer {
   }
 
   /**
-   * 构建系统提示词（优化版）
+   * 构建系统提示词（使用统一的review标准）
+   * @param {string} language - 检测到的主要编程语言
+   * @param {string} projectType - 项目类型
+   * @returns {string} 系统提示词
    */
-  getSystemPrompt() {
-    return `你是一个资深的代码审查专家，拥有10年以上的软件开发和代码质量评估经验。你精通多种编程语言和框架，善于发现潜在问题并提供实用的改进建议。
-
-🎯 **核心职责：**
-1. 深度分析代码变更的技术质量和业务逻辑
-2. 精准识别bug、性能瓶颈、安全漏洞和设计缺陷
-3. 提供具体、可执行、优先级明确的改进方案
-4. 评估代码的可维护性、可扩展性和团队协作友好度
-5. 确保代码符合行业最佳实践和团队规范
-
-💡 **分析原则：**
-- 优先关注功能正确性和安全性问题
-- 平衡代码质量和开发效率
-- 提供建设性而非批评性的反馈
-- 考虑代码的上下文和业务场景
-- 识别重构机会和技术债务
-
-📋 **输出要求：**
-请用专业、简洁的中文回复，避免冗长的理论阐述，专注于实际可执行的建议。`;
+  getSystemPrompt(language = null, projectType = null) {
+    // 使用统一的review标准管理器生成系统提示词
+    return this.reviewStandardsManager.getSystemPrompt(language, projectType);
   }
 
   /**
@@ -1020,6 +1018,104 @@ ${diffText}
         averageTokensPerRequest: Math.round(this.tokenStats.averageTokensPerRequest).toLocaleString()
       }
     };
+  }
+
+  /**
+   * 检测主要编程语言
+   * @param {Array} diff - 代码变更差异
+   * @returns {string} 检测到的主要语言
+   */
+  detectPrimaryLanguage(diff) {
+    const languageExtensions = {
+      'javascript': ['.js', '.jsx', '.mjs'],
+      'typescript': ['.ts', '.tsx'],
+      'dart': ['.dart'],
+      'python': ['.py', '.pyw'],
+      'java': ['.java'],
+      'kotlin': ['.kt', '.kts'],
+      'swift': ['.swift'],
+      'c++': ['.cpp', '.cxx', '.cc', '.c++'],
+      'c': ['.c', '.h'],
+      'go': ['.go'],
+      'rust': ['.rs'],
+      'php': ['.php'],
+      'ruby': ['.rb'],
+      'csharp': ['.cs'],
+      'html': ['.html', '.htm'],
+      'css': ['.css', '.scss', '.sass'],
+      'vue': ['.vue'],
+      'react': ['.jsx', '.tsx']
+    };
+
+    const langCounts = {};
+    
+    diff.forEach(file => {
+      const filePath = file.new_path || file.old_path || '';
+      const extension = path.extname(filePath).toLowerCase();
+      
+      for (const [lang, exts] of Object.entries(languageExtensions)) {
+        if (exts.includes(extension)) {
+          langCounts[lang] = (langCounts[lang] || 0) + 1;
+          break;
+        }
+      }
+    });
+
+    // 返回出现次数最多的语言
+    const primaryLang = Object.entries(langCounts)
+      .sort(([,a], [,b]) => b - a)[0];
+    
+    return primaryLang ? primaryLang[0] : null;
+  }
+
+  /**
+   * 检测项目类型
+   * @param {Array} diff - 代码变更差异
+   * @param {Object} mrDetails - MR详情
+   * @returns {string} 检测到的项目类型
+   */
+  detectProjectType(diff, mrDetails) {
+    const projectIndicators = {
+      'mobile_app': {
+        files: ['pubspec.yaml', 'android/', 'ios/', '.flutter-plugins'],
+        patterns: ['flutter', 'dart', 'android', 'ios', 'mobile']
+      },
+      'web_application': {
+        files: ['package.json', 'index.html', 'webpack.config.js', 'vite.config.js'],
+        patterns: ['web', 'frontend', 'react', 'vue', 'angular']
+      },
+      'backend_api': {
+        files: ['pom.xml', 'requirements.txt', 'Gemfile', 'go.mod'],
+        patterns: ['api', 'backend', 'server', 'service']
+      },
+      'microservices': {
+        files: ['docker-compose.yml', 'Dockerfile', 'k8s/', 'kubernetes/'],
+        patterns: ['microservice', 'docker', 'kubernetes', 'service-mesh']
+      }
+    };
+
+    for (const [projectType, indicators] of Object.entries(projectIndicators)) {
+      // 检查文件存在
+      const hasFiles = indicators.files.some(filePattern => 
+        diff.some(file => {
+          const filePath = file.new_path || file.old_path || '';
+          return filePath.includes(filePattern);
+        })
+      );
+
+      // 检查MR标题和描述中的模式
+      const title = (mrDetails.title || '').toLowerCase();
+      const description = (mrDetails.description || '').toLowerCase();
+      const hasPatterns = indicators.patterns.some(pattern => 
+        title.includes(pattern) || description.includes(pattern)
+      );
+
+      if (hasFiles || hasPatterns) {
+        return projectType;
+      }
+    }
+
+    return null;
   }
 }
 

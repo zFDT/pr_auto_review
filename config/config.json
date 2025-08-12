@@ -81,8 +81,11 @@
       "temperature": 0.1
     },
     "review_prompts": {
-      "system_prompt": "你是一个专业的代码审查专家，专注于Flutter/Dart、JavaScript/TypeScript、Java、Python等语言的代码质量分析。",
-      "analysis_focus": [
+      "_note": "Review提示词配置已迁移到统一的review-standards-config.json",
+      "config_file": "review-standards-config.json",
+      "use_unified_standards": true,
+      "legacy_system_prompt": "你是一个专业的代码审查专家，专注于Flutter/Dart、JavaScript/TypeScript、Java、Python等语言的代码质量分析。",
+      "legacy_analysis_focus": [
         "代码质量和最佳实践",
         "潜在的bug和逻辑错误", 
         "安全漏洞和风险点",

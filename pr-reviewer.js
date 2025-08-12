@@ -1806,8 +1806,7 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
       if (this.config.review_settings.enable_ai_analysis) {
         this.logger.info('执行AI智能分析...');
         try {
-          // aiAnalysis = await this.aiAnalyzer.analyzeCodeChanges(diff, mrDetails);
-          aiAnalysis = true; // 模拟AI分析结果
+           aiAnalysis = await this.aiAnalyzer.analyzeCodeChanges(diff, mrDetails);
           if (aiAnalysis) {
             this.logger.info('AI分析完成');
             this.logger.debug('AI分析结果结构:', { 
