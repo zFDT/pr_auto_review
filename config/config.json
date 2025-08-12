@@ -66,39 +66,11 @@
       "timeout": 60000,
       "fallback_to_openai": true
     },
-    "groq": {
-      "api_key": "${GROQ_API_KEY}",
-      "model": "llama3-8b-8192",
-      "base_url": "https://api.groq.com/openai/v1",
-      "timeout": 60000
-    },
-    "huggingface": {
-      "token": "${HUGGINGFACE_TOKEN}",
-      "model": "microsoft/DialoGPT-large",
-      "timeout": 600000
-    },
-    "together": {
-      "api_key": "${TOGETHER_API_KEY}",
-      "model": "meta-llama/Llama-2-7b-chat-hf",
-     "timeout": 600000
-    },
-    "ollama": {
-      "enabled": true,
-      "base_url": "http://localhost:11434",
-      "model": "codellama",
-      "timeout": 600000
-    },
-    "baidu": {
-      "api_key": "${BAIDU_API_KEY}",
-      "secret_key": "${BAIDU_SECRET_KEY}",
-      "model": "ERNIE-Bot-turbo",
-      "timeout": 600000
-    },
-    "tongyi": {
-      "api_key": "${TONGYI_API_KEY}",
-      "model": "qwen-turbo",
-      "timeout": 600000
-    },
+
+
+
+
+
     "aliyun_bailian": {
       "api_key": "your_openai_api_key_here",
       "model": "qwen-max",
