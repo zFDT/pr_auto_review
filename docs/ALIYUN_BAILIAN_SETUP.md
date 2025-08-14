@@ -73,25 +73,6 @@ ALIYUN_BAILIAN_BASE_URL=https://dashscope.aliyuncs.com/api/v1  # 可选，默认
 }
 ```
 
-### 2. 作为免费AI的一部分使用
-
-阿里云百炼也集成在免费AI分析器中，优先级仅次于本地Ollama：
-
-```json
-{
-  "review_settings": {
-    "ai_provider": "free",
-    "enable_ai_analysis": true
-  },
-  "ai_config": {
-    "free_ai": {
-      "enabled": true,
-      "priority": ["ollama", "aliyun_bailian", "groq", "huggingface", "together", "baidu", "tongyi", "static"]
-    }
-  }
-}
-```
-
 ## 测试配置
 
 运行以下命令测试阿里云百炼配置：

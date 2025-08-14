@@ -29,10 +29,10 @@
  */
 
 import { Gitlab } from "@gitbeaker/rest";
-import { CopilotAnalyzer } from './copilot-extension.js';
-import { OpenAIAnalyzer } from './openai-analyzer.js';
-import { AliyunBailianAnalyzer } from './aliyun-bailian-analyzer.js';
-import { configLoader } from './config-loader.js';
+import { CopilotAnalyzer } from './src/analyzers/copilot-extension.js';
+import { OpenAIAnalyzer } from './src/analyzers/openai-analyzer.js';
+import { AliyunBailianAnalyzer } from './src/analyzers/aliyun-bailian-analyzer.js';
+import { configLoader } from './src/config/config-loader.js';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -963,7 +963,7 @@ class PRReviewer {
       // 处理不同AI分析器返回的数据结构
       let actualAnalysisData = aiAnalysis;
       
-      // 如果是嵌套结构（免费AI分析器返回格式），提取analysis字段
+      // 如果是嵌套结构，提取analysis字段
       if (aiAnalysis.analysis && typeof aiAnalysis.analysis === 'object') {
         actualAnalysisData = aiAnalysis.analysis;
         this.logger.debug('使用嵌套分析数据', { 
@@ -1211,7 +1211,7 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
     // 处理AI分析数据结构
     let actualAnalysisData = null;
     if (aiAnalysis) {
-      // 如果是嵌套结构（免费AI分析器返回格式），提取analysis字段
+      // 如果是嵌套结构，提取analysis字段
       actualAnalysisData = aiAnalysis.analysis && typeof aiAnalysis.analysis === 'object' 
         ? aiAnalysis.analysis 
         : aiAnalysis;
@@ -1450,7 +1450,7 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
       // 处理不同AI分析器返回的数据结构
       let actualAnalysisData = aiAnalysis;
       
-      // 如果是嵌套结构（免费AI分析器返回格式），提取analysis字段
+      // 如果是嵌套结构，提取analysis字段
       if (aiAnalysis.analysis && typeof aiAnalysis.analysis === 'object') {
         actualAnalysisData = aiAnalysis.analysis;
       }
@@ -1806,7 +1806,7 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
       if (this.config.review_settings.enable_ai_analysis) {
         this.logger.info('执行AI智能分析...');
         try {
-          aiAnalysis = await this.aiAnalyzer.analyzeCodeChanges(diff, mrDetails);
+           aiAnalysis = await this.aiAnalyzer.analyzeCodeChanges(diff, mrDetails);
           if (aiAnalysis) {
             this.logger.info('AI分析完成');
             this.logger.debug('AI分析结果结构:', { 

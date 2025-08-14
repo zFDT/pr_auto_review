@@ -25,6 +25,11 @@ reports/
 # 系统文件
 .DS_Store
 Thumbs.db
+._*
+*.pid
+launchd.log
+launchd.error.log
+file-server.log
 
 # IDE文件
 .idea/

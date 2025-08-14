@@ -41,7 +41,6 @@
 │   ├── openai-analyzer.js            # OpenAI分析器
 │   ├── aliyun-bailian-analyzer.js    # 阿里云百炼分析器  
 │   ├── copilot-extension.js          # VS Code Copilot集成
-│   ├── free-ai-analyzer.js           # 免费AI服务分析器
 │   └── package.json                  # 项目配置文件
 ├── 📚 文档系统
 │   ├── README.md                     # 项目主文档
@@ -51,7 +50,6 @@
 │   ├── QUICKSTART.md                 # 快速开始指南
 │   ├── TECH_SHARING.md               # 技术分享文档
 │   ├── AI_MODELS_GUIDE.md            # AI模型使用指南
-│   ├── FREE_AI_SETUP.md              # 免费AI配置指南
 │   └── ALIYUN_BAILIAN_SETUP.md       # 阿里云百炼配置指南
 ├── ⚙️ 配置文件
 │   ├── config.json                   # 主配置文件

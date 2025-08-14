@@ -28,6 +28,7 @@ import OpenAI from 'openai';
 import fs from 'fs/promises';
 import path from 'path';
 import { createHash } from 'crypto';
+import ReviewStandardsManager from '../utils/review-standards-manager.js';
 
 /**
  * OpenAI分析器配置常量
@@ -95,6 +96,9 @@ class OpenAIAnalyzer {
     this.config = config;
     this.aiConfig = config.ai_config?.openai || {};
     this.reviewPrompts = config.ai_config?.review_prompts || {};
+    
+    // 初始化Review标准管理器
+    this.reviewStandardsManager = new ReviewStandardsManager();
     
     // OpenAI客户端
     this.openai = null;
@@ -231,6 +235,13 @@ class OpenAIAnalyzer {
         return this.createFailureReport('没有有效的代码差异可供分析');
       }
       
+      // 检测主要编程语言和项目类型
+      const detectedLanguage = this.detectPrimaryLanguage(processedDiff);
+      const projectType = this.detectProjectType(processedDiff, mrDetails);
+      
+      this.logger.info(`🔍 检测到主要语言: ${detectedLanguage || '未知'}`);
+      this.logger.info(`📁 检测到项目类型: ${projectType || '通用'}`);
+      
       // 检查缓存
       const cacheKey = this.generateCacheKey(processedDiff, mrDetails);
       const cachedResult = this.getCachedResult(cacheKey);
@@ -240,8 +251,8 @@ class OpenAIAnalyzer {
         return cachedResult;
       }
       
-      // 构建分析请求
-      const analysisPrompt = this.buildComprehensivePrompt(processedDiff, mrDetails);
+      // 构建分析请求（传递语言和项目类型信息）
+      const analysisPrompt = this.buildComprehensivePrompt(processedDiff, mrDetails, detectedLanguage, projectType);
       
       // 执行AI分析
       const response = await this.executeAnalysisWithRetry(analysisPrompt);
@@ -482,8 +493,8 @@ class OpenAIAnalyzer {
    * 创建结构化的、针对性的分析请求
    * @private
    */
-  buildComprehensivePrompt(processedDiff, mrDetails) {
-    const systemPrompt = this.getAdvancedSystemPrompt();
+  buildComprehensivePrompt(processedDiff, mrDetails, language = null, projectType = null) {
+    const systemPrompt = this.getAdvancedSystemPrompt(language, projectType);
     const codeAnalysisPrompt = this.buildCodeAnalysisPrompt(processedDiff);
     const contextPrompt = this.buildContextPrompt(mrDetails);
     const outputFormat = this.getOutputFormatSpecification();
@@ -496,25 +507,14 @@ class OpenAIAnalyzer {
 
   /**
    * 获取高级系统提示词
+   * @param {string} language - 检测到的主要编程语言
+   * @param {string} projectType - 项目类型
+   * @returns {string} 系统提示词
    * @private
    */
-  getAdvancedSystemPrompt() {
-    const customPrompt = this.reviewPrompts.system_prompt;
-    const analysisFocus = this.reviewPrompts.analysis_focus || [];
-    
-    return `${customPrompt || '你是一个世界级的代码审查专家和软件架构师'}
-
-你拥有以下专业技能：
-- 深度代码质量分析和架构设计评估
-- 多语言编程规范和最佳实践掌握
-- 安全漏洞检测和性能优化经验
-- 大型项目重构和可维护性设计
-- 现代开发工具链和DevOps实践
-
-分析重点：
-${analysisFocus.map(focus => `- ${focus}`).join('\n')}
-
-请以专业、客观、建设性的态度进行代码审查，提供具体可行的改进建议。`;
+  getAdvancedSystemPrompt(language = null, projectType = null) {
+    // 使用统一的review标准管理器生成系统提示词
+    return this.reviewStandardsManager.getSystemPrompt(language, projectType);
   }
 
   /**
@@ -1485,6 +1485,77 @@ ${analysisFocus.map(focus => `- ${focus}`).join('\n')}
       this.logger.error('❌ 保存分析结果失败:', error.message);
       throw error;
     }
+  }
+
+  /**
+   * 检测主要编程语言
+   * @param {Array} processedDiff - 预处理后的代码差异
+   * @returns {string} 检测到的主要语言
+   */
+  detectPrimaryLanguage(processedDiff) {
+    const languageCounts = {};
+    
+    processedDiff.forEach(file => {
+      if (file.language && file.language !== 'unknown') {
+        languageCounts[file.language] = (languageCounts[file.language] || 0) + 1;
+      }
+    });
+
+    // 返回出现次数最多的语言
+    const primaryLang = Object.entries(languageCounts)
+      .sort(([,a], [,b]) => b - a)[0];
+    
+    return primaryLang ? primaryLang[0] : null;
+  }
+
+  /**
+   * 检测项目类型
+   * @param {Array} processedDiff - 预处理后的代码差异
+   * @param {Object} mrDetails - MR详情
+   * @returns {string} 检测到的项目类型
+   */
+  detectProjectType(processedDiff, mrDetails) {
+    const projectIndicators = {
+      'mobile_app': {
+        files: ['pubspec.yaml', 'android/', 'ios/', '.flutter-plugins', 'AndroidManifest.xml'],
+        patterns: ['flutter', 'dart', 'android', 'ios', 'mobile', 'app']
+      },
+      'web_application': {
+        files: ['package.json', 'index.html', 'webpack.config.js', 'vite.config.js', 'next.config.js'],
+        patterns: ['web', 'frontend', 'react', 'vue', 'angular', 'next', 'nuxt']
+      },
+      'backend_api': {
+        files: ['pom.xml', 'requirements.txt', 'Gemfile', 'go.mod', 'Cargo.toml'],
+        patterns: ['api', 'backend', 'server', 'service', 'rest', 'graphql']
+      },
+      'microservices': {
+        files: ['docker-compose.yml', 'Dockerfile', 'k8s/', 'kubernetes/', 'helm/'],
+        patterns: ['microservice', 'docker', 'kubernetes', 'service-mesh', 'grpc']
+      }
+    };
+
+    for (const [projectType, indicators] of Object.entries(projectIndicators)) {
+      // 检查文件存在
+      const hasFiles = indicators.files.some(filePattern => 
+        processedDiff.some(file => {
+          const filePath = file.path || '';
+          return filePath.includes(filePattern);
+        })
+      );
+
+      // 检查MR标题和描述中的模式
+      const title = (mrDetails.title || '').toLowerCase();
+      const description = (mrDetails.description || '').toLowerCase();
+      const hasPatterns = indicators.patterns.some(pattern => 
+        title.includes(pattern) || description.includes(pattern)
+      );
+
+      if (hasFiles || hasPatterns) {
+        return projectType;
+      }
+    }
+
+    return null;
   }
 }
 

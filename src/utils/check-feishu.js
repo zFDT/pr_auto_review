@@ -5,7 +5,7 @@
  * 用于验证飞书通知配置是否正确
  */
 
-import { configLoader } from './config-loader.js';
+import { configLoader } from '../config/config-loader.js';
 
 async function checkFeishuConfig() {
   try {
