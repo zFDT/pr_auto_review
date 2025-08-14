@@ -167,7 +167,8 @@ FEISHU_WEBHOOK=your_feishu_webhook
 - [AI模型配置指南](docs/AI_MODELS_GUIDE.md)
 - [阿里云百炼设置](docs/ALIYUN_BAILIAN_SETUP.md)
 - [Copilot设置指南](docs/COPILOT_SETUP.md)
-- [技术分享文档](docs/TECH_SHARING.md)
+- [完整技术分享文档](docs/COMPREHENSIVE_TECH_SHARING.md)
+- [统一评审配置指南](docs/UNIFIED_REVIEW_CONFIG_GUIDE.md)
 - [项目结构说明](PROJECT_STRUCTURE.md)
 
 ---

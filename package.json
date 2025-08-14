@@ -14,7 +14,6 @@
     "dev": "DEBUG=true node index.js",
     "test": "echo 'Tests will be implemented in future versions'",
     "test:config": "node src/config/config-loader.js",
-    "test:ai": "node src/utils/demo-ai-providers.js",
     "check-config": "node -e \"import('./src/config/config-loader.js').then(({configLoader}) => configLoader.loadConfig().then(() => console.log('✅ 配置验证通过')).catch(err => { console.error('❌ 配置错误:', err.message); process.exit(1); }))\"",
     "check-feishu": "node src/utils/check-feishu.js",
     "check-health": "node src/utils/health-check.js",
@@ -23,7 +22,6 @@
     "lint": "echo 'Linting will be implemented in future versions'",
     "format": "echo 'Formatting will be implemented in future versions'",
     "setup": "npm install && echo '请编辑 config/config.json 文件配置项目信息' && npm run check-config",
-    "clean": "node src/utils/project-cleaner.js",
     "clean:reports": "rm -rf reports/*.txt reports/*.json",
     "clean:temp": "rm -rf temp/*",
     "backup-config": "cp config/config.json config/config.backup.json && echo '配置已备份到 config/config.backup.json'",
@@ -163,7 +161,10 @@
       "no-console": "off",
       "no-unused-vars": "warn",
       "prefer-const": "error",
-      "semi": ["error", "always"]
+      "semi": [
+        "error",
+        "always"
+      ]
     }
   },
   "prettier": {
