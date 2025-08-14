@@ -25,7 +25,6 @@
 import fetch from 'node-fetch';
 import fs from 'fs/promises';
 import path from 'path';
-import { createHash } from 'crypto';
 import ReviewStandardsManager from '../utils/review-standards-manager.js';
 
 /**
@@ -39,11 +38,6 @@ class AliyunBailianAnalyzer {
     
     // 初始化Review标准管理器
     this.reviewStandardsManager = new ReviewStandardsManager();
-    
-    // 分析缓存配置
-    this.analysisCache = new Map();
-    this.maxCacheSize = this.bailianConfig.max_cache_size || 100;
-    this.cacheExpireTime = this.bailianConfig.cache_expire_time || 3600000; // 1小时
     
     // 请求控制配置
     this.requestQueue = [];
@@ -88,10 +82,6 @@ class AliyunBailianAnalyzer {
       timeout: configFile.timeout || 45000,  // 增加到45秒，处理复杂分析
       max_tokens: configFile.max_tokens || 8000,  // 增加到8000，获得更详细分析
       temperature: configFile.temperature || 0.2,  // 提高创造性，更好的建议
-      
-      // 缓存配置
-      max_cache_size: configFile.max_cache_size || 100,
-      cache_expire_time: configFile.cache_expire_time || 3600000, // 1小时
       
       // 并发控制
       max_concurrent: configFile.max_concurrent || 5,
@@ -290,24 +280,11 @@ class AliyunBailianAnalyzer {
       console.log(`🔍 检测到主要语言: ${detectedLanguage || '未知'}`);
       console.log(`📁 检测到项目类型: ${projectType || '通用'}`);
       
-      // 生成缓存键
-      const cacheKey = this.generateCacheKey(diff, mrDetails);
-      
-      // 检查缓存（使用新的缓存机制）
-      const cachedResult = this.getCachedResult(cacheKey);
-      if (cachedResult) {
-        console.log('📋 使用缓存的分析结果');
-        return cachedResult;
-      }
-
       // 预处理：过滤和优化diff
       const optimizedDiff = this.preprocessDiff(diff);
       
       // 构建分析请求（传递语言和项目类型信息）
       const analysisResult = await this.performAnalysis(optimizedDiff, mrDetails, detectedLanguage, projectType);
-      
-      // 缓存结果（使用新的缓存机制）
-      this.cacheAnalysisResult(cacheKey, analysisResult);
       
       return analysisResult;
       
@@ -752,81 +729,6 @@ ${diffText}
     merged.summary = `共分析 ${analyses.length} 个代码块，发现 ${merged.issues.length} 个问题，${merged.suggestions.length} 条建议。总体评分 ${merged.score.toFixed(1)}/10，风险等级：${merged.risk_level}`;
 
     return merged;
-  }
-
-  /**
-   * 生成缓存键
-   */
-  generateCacheKey(diff, mrDetails) {
-    const diffHash = createHash('md5')
-      .update(JSON.stringify(diff))
-      .digest('hex');
-    const mrHash = createHash('md5')
-      .update(`${mrDetails.title || ''}-${mrDetails.description || ''}`)
-      .digest('hex');
-    
-    return `${diffHash}-${mrHash}`;
-  }
-
-  /**
-   * 缓存分析结果（优化版）
-   */
-  cacheAnalysisResult(key, result) {
-    // 清理过期缓存
-    this.cleanExpiredCache();
-    
-    // 限制缓存大小
-    if (this.analysisCache.size >= this.maxCacheSize) {
-      // 删除最旧的缓存项
-      const oldestKey = this.analysisCache.keys().next().value;
-      this.analysisCache.delete(oldestKey);
-    }
-    
-    // 添加时间戳
-    const cacheItem = {
-      result,
-      timestamp: Date.now(),
-      expires: Date.now() + this.cacheExpireTime
-    };
-    
-    this.analysisCache.set(key, cacheItem);
-    console.log(`💾 缓存分析结果 (缓存大小: ${this.analysisCache.size}/${this.maxCacheSize})`);
-  }
-
-  /**
-   * 获取缓存的分析结果
-   */
-  getCachedResult(key) {
-    const cacheItem = this.analysisCache.get(key);
-    if (!cacheItem) return null;
-    
-    // 检查是否过期
-    if (Date.now() > cacheItem.expires) {
-      this.analysisCache.delete(key);
-      return null;
-    }
-    
-    return cacheItem.result;
-  }
-
-  /**
-   * 清理过期缓存
-   */
-  cleanExpiredCache() {
-    const now = Date.now();
-    const keysToDelete = [];
-    
-    for (const [key, item] of this.analysisCache.entries()) {
-      if (now > item.expires) {
-        keysToDelete.push(key);
-      }
-    }
-    
-    keysToDelete.forEach(key => this.analysisCache.delete(key));
-    
-    if (keysToDelete.length > 0) {
-      console.log(`🗑️ 清理 ${keysToDelete.length} 个过期缓存项`);
-    }
   }
 
   /**

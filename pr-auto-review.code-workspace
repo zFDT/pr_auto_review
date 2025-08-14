@@ -1,0 +1,24 @@
+{
+  "folders": [
+    {
+      "path": "."
+    }
+  ],
+  "settings": {
+    "github.copilot.chat.codeGeneration.useInstructionFiles": true,
+    "github.copilot.enable": {
+      "*": true,
+      "markdown": true,
+      "javascript": true,
+      "json": true
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "github.copilot",
+      "github.copilot-chat",
+      "ms-vscode.vscode-json",
+      "yzhang.markdown-all-in-one"
+    ]
+  }
+}

@@ -1,0 +1,354 @@
+{
+    "unified_flutter_review_config": {
+        "description": "Flutter项目统一代码审查配置 - 整合检查规则和AI分析标准",
+        "version": "3.0.0",
+        "last_updated": "2025-01-14",
+        "ai_analysis_config": {
+            "system_prompts": {
+                "base_system_prompt": "你是一个专精Flutter开发和GetX状态管理的代码审查专家，拥有丰富的移动应用开发经验。你精通Dart语言、Flutter框架和GetX生态系统，擅长发现Flutter特有的问题并提供实用的改进建议。",
+                "role_definition": {
+                    "expertise": [
+                        "Flutter架构设计和Widget组件优化",
+                        "GetX状态管理、路由和依赖注入最佳实践",
+                        "Dart语言特性和Flutter性能优化",
+                        "移动应用UI/UX设计和响应式布局",
+                        "Flutter生命周期和内存管理"
+                    ],
+                    "responsibilities": [
+                        "分析Flutter代码的架构设计和组件实现质量",
+                        "评估GetX状态管理的使用规范和性能影响",
+                        "检查Widget生命周期和资源管理的正确性",
+                        "识别Flutter特有的性能瓶颈和内存泄漏",
+                        "确保代码符合Flutter最佳实践和GetX规范"
+                    ]
+                },
+                "analysis_principles": [
+                    "优先关注应用性能和用户体验",
+                    "确保GetX状态管理的正确使用",
+                    "重视Flutter Widget的复用性和可维护性",
+                    "考虑移动设备的资源限制和电池消耗",
+                    "保持代码的可测试性和模块化"
+                ]
+            },
+            "output_format_requirements": {
+                "structure": "structured_json",
+                "language": "chinese",
+                "style": "professional_concise",
+                "include_examples": true,
+                "max_suggestions_per_category": 5,
+                "required_sections": [
+                    "quality_score",
+                    "summary",
+                    "strengths",
+                    "issues_found",
+                    "improvement_suggestions",
+                    "security_concerns",
+                    "performance_notes"
+                ],
+                "quality_scoring": {
+                    "scale": "1-10",
+                    "criteria": {
+                        "9-10": "优秀 - 代码质量很高，几乎没有问题",
+                        "7-8": "良好 - 代码质量较好，有少量改进空间",
+                        "5-6": "一般 - 代码可用但有明显改进空间",
+                        "3-4": "需要改进 - 存在较多问题需要修复",
+                        "1-2": "需要重构 - 存在严重问题，建议重写"
+                    }
+                }
+            }
+        },
+        "review_focus_areas": {
+            "widget_design_and_architecture": {
+                "enabled": true,
+                "weight": 30,
+                "description": "Widget组件设计和架构检查",
+                "checks": {
+                    "widget_patterns": {
+                        "enabled": true,
+                        "rules": [
+                            "正确使用StatelessWidget和StatefulWidget",
+                            "Widget复杂度控制，建议拆分大组件",
+                            "合理使用const构造函数优化性能",
+                            "避免深层嵌套Widget",
+                            "自定义Widget的性能优化",
+                            "Widget树层级和嵌套深度控制"
+                        ],
+                        "thresholds": {
+                            "max_widget_nesting_depth": 7,
+                            "max_build_method_lines": 100
+                        }
+                    },
+                    "architecture_patterns": {
+                        "enabled": true,
+                        "supported_patterns": [
+                            "MVVM",
+                            "BLoC",
+                            "Provider",
+                            "Riverpod",
+                            "GetX"
+                        ],
+                        "description": "检查是否遵循推荐的架构模式"
+                    },
+                    "file_organization": {
+                        "enabled": true,
+                        "structure_rules": [
+                            "lib/models/",
+                            "lib/views/",
+                            "lib/controllers/",
+                            "lib/services/",
+                            "lib/utils/",
+                            "lib/widgets/"
+                        ],
+                        "description": "确保文件按功能模块合理组织"
+                    }
+                }
+            },
+            "getx_state_management": {
+                "enabled": true,
+                "weight": 35,
+                "description": "GetX状态管理专项检查",
+                "checks": {
+                    "controller_patterns": {
+                        "enabled": true,
+                        "rules": [
+                            "GetxController应继承自GetxController而不是GetxService",
+                            "使用onInit()而不是构造函数进行初始化",
+                            "在onClose()中释放资源和取消订阅",
+                            "避免在Controller中直接操作UI"
+                        ],
+                        "thresholds": {
+                            "max_controller_dependencies": 10,
+                            "max_getx_observers": 5
+                        }
+                    },
+                    "reactive_programming": {
+                        "enabled": true,
+                        "items": [
+                            "Obx和GetBuilder的合理选择",
+                            "响应式变量(.obs)的使用规范",
+                            "Worker的正确使用和资源释放"
+                        ]
+                    },
+                    "dependency_injection": {
+                        "enabled": true,
+                        "items": [
+                            "GetX依赖注入(Get.put, Get.lazyPut)的最佳实践",
+                            "依赖生命周期管理",
+                            "避免循环依赖"
+                        ]
+                    },
+                    "navigation_management": {
+                        "enabled": true,
+                        "checks": [
+                            "GetX路由管理和页面导航",
+                            "路由跳转规范性",
+                            "返回数据处理",
+                            "导航栈管理"
+                        ]
+                    }
+                }
+            },
+            "performance_optimization": {
+                "enabled": true,
+                "weight": 25,
+                "description": "Flutter性能优化检查",
+                "checks": {
+                    "build_optimization": {
+                        "enabled": true,
+                        "rules": [
+                            "避免在build方法中进行复杂计算",
+                            "合理使用const关键字",
+                            "检查不必要的Widget重建",
+                            "Widget重建优化和const关键字使用"
+                        ],
+                        "thresholds": {
+                            "performance_widget_rebuild_threshold": "high"
+                        }
+                    },
+                    "memory_management": {
+                        "enabled": true,
+                        "checks": [
+                            "Stream资源释放",
+                            "AnimationController释放",
+                            "监听器取消订阅",
+                            "内存泄漏风险检查",
+                            "正确处理initState和dispose",
+                            "页面生命周期管理"
+                        ]
+                    },
+                    "list_rendering": {
+                        "enabled": true,
+                        "rules": [
+                            "长列表使用ListView.builder",
+                            "合理使用itemExtent",
+                            "避免全量渲染大数据集",
+                            "列表渲染性能(ListView.builder使用)"
+                        ]
+                    },
+                    "asset_management": {
+                        "enabled": true,
+                        "items": [
+                            "图片加载和缓存策略",
+                            "异步操作和Future/Stream处理"
+                        ]
+                    }
+                }
+            },
+            "dart_code_quality": {
+                "enabled": true,
+                "weight": 20,
+                "description": "Dart语言质量检查",
+                "checks": {
+                    "language_features": {
+                        "enabled": true,
+                        "items": [
+                            "Dart语言特性的正确使用",
+                            "空安全(Null Safety)的规范应用",
+                            "异步编程(async/await)的最佳实践",
+                            "扩展方法和Mixin的合理使用"
+                        ]
+                    },
+                    "naming_conventions": {
+                        "enabled": true,
+                        "rules": {
+                            "variables": "camelCase",
+                            "functions": "camelCase",
+                            "classes": "PascalCase",
+                            "constants": "SCREAMING_SNAKE_CASE",
+                            "files": "snake_case"
+                        },
+                        "description": "检查命名规范是否符合Dart约定"
+                    },
+                    "code_reuse": {
+                        "enabled": true,
+                        "duplicate_threshold": 10,
+                        "description": "查看是否有重复代码，建议提取公共组件"
+                    }
+                }
+            },
+            "ui_ux_consistency": {
+                "enabled": true,
+                "weight": 15,
+                "description": "UI/UX一致性检查",
+                "checks": {
+                    "design_compliance": {
+                        "enabled": true,
+                        "description": "UI实现是否符合设计规范"
+                    },
+                    "responsive_layout": {
+                        "enabled": true,
+                        "breakpoints": [
+                            "mobile",
+                            "tablet",
+                            "desktop"
+                        ],
+                        "description": "响应式布局检查"
+                    },
+                    "theme_usage": {
+                        "enabled": true,
+                        "checks": [
+                            "正确使用Theme数据",
+                            "颜色方案一致性",
+                            "字体样式规范"
+                        ]
+                    },
+                    "mobile_specific_concerns": {
+                        "enabled": true,
+                        "items": [
+                            "平台特定代码的处理",
+                            "设备适配和响应式设计",
+                            "电池和性能优化"
+                        ]
+                    }
+                }
+            },
+            "error_handling_and_stability": {
+                "enabled": true,
+                "weight": 20,
+                "description": "错误处理和稳定性检查",
+                "checks": {
+                    "exception_handling": {
+                        "enabled": true,
+                        "areas": [
+                            "网络请求错误处理",
+                            "文件操作异常处理",
+                            "用户输入验证",
+                            "异步操作错误处理"
+                        ]
+                    },
+                    "data_persistence": {
+                        "enabled": true,
+                        "items": [
+                            "本地存储和数据持久化",
+                            "数据验证和类型安全"
+                        ]
+                    },
+                    "testing_support": {
+                        "enabled": true,
+                        "checks": [
+                            "单元测试覆盖率",
+                            "Widget测试实现",
+                            "集成测试设计"
+                        ]
+                    }
+                }
+            },
+            "security_and_best_practices": {
+                "enabled": true,
+                "weight": 10,
+                "description": "安全性和最佳实践检查",
+                "checks": {
+                    "security_practices": {
+                        "enabled": true,
+                        "areas": [
+                            "敏感信息处理",
+                            "网络安全",
+                            "数据加密",
+                            "权限管理"
+                        ]
+                    },
+                    "documentation_quality": {
+                        "enabled": true,
+                        "checks": [
+                            "代码注释质量",
+                            "API文档说明",
+                            "README文档完整性"
+                        ]
+                    }
+                }
+            }
+        },
+        "general_settings": {
+            "exclude_patterns": [
+                "*.min.js",
+                "*.min.css",
+                "node_modules/*",
+                "dist/*",
+                "build/*",
+                ".dart_tool/*",
+                "android/*",
+                "ios/*",
+                "web/*",
+                "windows/*",
+                "macos/*",
+                "linux/*",
+                ".git/*",
+                "*.log",
+                "pubspec.lock",
+                ".flutter-plugins",
+                ".flutter-plugins-dependencies"
+            ],
+            "output_settings": {
+                "include_detailed_diff": false,
+                "max_issues_per_category": 10,
+                "severity_levels": [
+                    "critical",
+                    "major",
+                    "minor",
+                    "suggestion"
+                ],
+                "report_format": "structured"
+            }
+        }
+    }
+}

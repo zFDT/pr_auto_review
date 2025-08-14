@@ -576,13 +576,6 @@ class PRReviewer {
     // 初始化AI分析器
     this.aiAnalyzer = new AIAnalyzer(config);
     
-    // 项目缓存 - 用于动态获取项目信息
-    this.projectsCache = {
-      data: new Map(), // 存储项目信息: name -> {id, path, description}
-      lastUpdated: null,
-      ttl: 5 * 60 * 1000 // 5分钟缓存时间
-    };
-    
     // 性能监控
     this.reviewStats = {
       totalReviews: 0,
@@ -595,96 +588,95 @@ class PRReviewer {
   }
 
   /**
-   * 从GitLab API获取所有可访问的项目
-   * 支持分页和缓存机制
+   * 从GitLab API搜索项目
+   * 根据项目名称、路径或命名空间路径搜索项目
    * 
-   * @returns {Promise<Map>} 项目信息映射 (项目名 -> 项目详情)
+   * @param {string} projectName - 项目名称、路径或命名空间路径
+   * @returns {Promise<Object|null>} 找到的项目信息，未找到返回null
    */
-  async fetchProjectsFromAPI() {
+  async searchProjectFromAPI(projectName) {
     try {
-      this.logger.info('正在从GitLab API获取项目列表...');
+      this.logger.info(`正在从GitLab API搜索项目: ${projectName}`);
       
-      const projects = new Map();
-      let page = 1;
-      const perPage = 100; // 每页获取100个项目
-      let hasMore = true;
+      // 尝试多种搜索方式
+      const searchStrategies = [
+        // 1. 精确搜索项目名称
+        { search: projectName, strategy: 'exact_name' },
+        // 2. 搜索项目路径
+        { search: projectName.toLowerCase().replace(/\s+/g, '-'), strategy: 'path_search' },
+        // 3. 模糊搜索
+        { search: projectName, strategy: 'fuzzy_search' }
+      ];
       
-      while (hasMore) {
-        this.logger.info(`获取第${page}页项目数据...`);
+      for (const { search, strategy } of searchStrategies) {
+        this.logger.info(`尝试${strategy}搜索: ${search}`);
         
-        const pageProjects = await this.api.Projects.all({
-          simple: true, // 获取简化信息以提高性能
-          per_page: perPage,
-          page: page,
-          membership: true, // 只获取用户有权限的项目
-          archived: false // 排除已归档的项目
-        });
-        
-        if (pageProjects.length === 0) {
-          hasMore = false;
-          break;
+        // 如果输入的是纯数字，直接作为项目ID查询
+        if (/^\d+$/.test(projectName)) {
+          try {
+            const project = await this.api.Projects.show(parseInt(projectName));
+            if (project) {
+              this.logger.info(`通过项目ID找到项目: ${project.name} (ID: ${project.id})`);
+              return {
+                id: project.id,
+                name: project.name,
+                path: project.path,
+                path_with_namespace: project.path_with_namespace,
+                description: project.description || `项目 ${project.name}`,
+                web_url: project.web_url
+              };
+            }
+          } catch (error) {
+            this.logger.info(`项目ID ${projectName} 不存在或无权限访问`);
+          }
         }
         
-        // 处理当前页的项目
-        for (const project of pageProjects) {
-          const projectInfo = {
+        // 搜索项目列表
+        const projects = await this.api.Projects.all({
+          search: search,
+          simple: true,
+          per_page: 50,
+          membership: true,
+          archived: false
+        });
+        
+        if (projects && projects.length > 0) {
+          // 优先匹配精确名称
+          for (const project of projects) {
+            if (project.name === projectName || 
+                project.path === projectName || 
+                project.path_with_namespace === projectName) {
+              this.logger.info(`精确匹配找到项目: ${project.name} (ID: ${project.id})`);
+              return {
+                id: project.id,
+                name: project.name,
+                path: project.path,
+                path_with_namespace: project.path_with_namespace,
+                description: project.description || `项目 ${project.name}`,
+                web_url: project.web_url
+              };
+            }
+          }
+          
+          // 如果没有精确匹配，返回第一个结果
+          const project = projects[0];
+          this.logger.info(`模糊匹配找到项目: ${project.name} (ID: ${project.id})`);
+          return {
             id: project.id,
             name: project.name,
             path: project.path,
             path_with_namespace: project.path_with_namespace,
             description: project.description || `项目 ${project.name}`,
-            last_activity_at: project.last_activity_at,
             web_url: project.web_url
           };
-          
-          // 使用多个键来存储项目信息，支持不同的查找方式
-          projects.set(project.name, projectInfo);
-          projects.set(project.path, projectInfo);
-          projects.set(project.path_with_namespace, projectInfo);
-          projects.set(project.id.toString(), projectInfo);
-        }
-        
-        // 如果返回的项目数少于请求的数量，说明已经是最后一页
-        if (pageProjects.length < perPage) {
-          hasMore = false;
-        } else {
-          page++;
         }
       }
       
-      this.logger.info(`成功获取${projects.size / 4}个项目信息`); // 除以4是因为每个项目存储了4个键
-      return projects;
+      return null;
       
     } catch (error) {
-      this.logger.error('获取项目列表失败', error);
-      throw new Error(`无法获取项目列表: ${error.message}`);
-    }
-  }
-
-  /**
-   * 刷新项目缓存
-   * 
-   * @param {boolean} force - 是否强制刷新
-   * @returns {Promise<void>}
-   */
-  async refreshProjectsCache(force = false) {
-    const now = Date.now();
-    const cacheExpired = !this.projectsCache.lastUpdated || 
-                        (now - this.projectsCache.lastUpdated) > this.projectsCache.ttl;
-    
-    if (force || cacheExpired) {
-      this.logger.info('刷新项目缓存...');
-      try {
-        this.projectsCache.data = await this.fetchProjectsFromAPI();
-        this.projectsCache.lastUpdated = now;
-        this.logger.info('项目缓存刷新成功');
-      } catch (error) {
-        this.logger.error('项目缓存刷新失败', error);
-        // 如果刷新失败但有旧缓存，继续使用旧缓存
-        if (this.projectsCache.data.size === 0) {
-          throw error;
-        }
-      }
+      this.logger.error('搜索项目失败', error);
+      throw new Error(`搜索项目失败: ${error.message}`);
     }
   }
 
@@ -701,147 +693,41 @@ class PRReviewer {
       throw new Error('项目名称不能为空');
     }
 
-    // 1. 优先检查配置文件中的projects配置（向后兼容）
-    if (this.config.projects && this.config.projects[projectName]) {
-      const project = this.config.projects[projectName];
-      this.logger.info(`从配置文件找到项目: ${projectName} (ID: ${project.id})`);
-      return project.id;
-    }
-
-    // 2. 如果配置文件中没有，则通过API动态查询
-    this.logger.info(`配置文件中未找到项目 "${projectName}"，尝试从GitLab API查询...`);
+    // 1. 优先通过API查询获取最新的项目信息
+    this.logger.info(`正在从GitLab API查询项目: ${projectName}`);
     
     try {
-      // 刷新项目缓存（如果需要）
-      await this.refreshProjectsCache();
-      
-      // 在缓存中查找项目
-      const project = this.projectsCache.data.get(projectName);
+      const project = await this.searchProjectFromAPI(projectName);
       
       if (project) {
-        this.logger.info(`从API找到项目: ${projectName} (ID: ${project.id}, 路径: ${project.path_with_namespace})`);
+        this.logger.info(`从API找到项目: ${project.name} (ID: ${project.id}, 路径: ${project.path_with_namespace})`);
         return project.id;
       }
-      
-      // 如果还是没找到，尝试模糊匹配
-      const fuzzyMatch = this.findProjectByFuzzyMatch(projectName);
-      if (fuzzyMatch) {
-        this.logger.info(`通过模糊匹配找到项目: ${fuzzyMatch.name} (ID: ${fuzzyMatch.id}) 匹配输入: "${projectName}"`);
-        return fuzzyMatch.id;
-      }
-      
-      // 最终没找到项目
-      const suggestions = this.getProjectSuggestions(projectName);
-      throw new Error(
-        `未找到项目 "${projectName}"。\n` +
-        (suggestions.length > 0 ? `相似项目建议: ${suggestions.join(', ')}\n` : '') +
-        `请检查项目名称、路径或命名空间路径是否正确。\n` +
-        `您可以使用以下格式之一:\n` +
-        `- 项目名称: "MyProject"\n` +
-        `- 项目路径: "myproject"\n` +
-        `- 命名空间路径: "group/myproject"`
-      );
-      
     } catch (error) {
-      if (error.message.includes('未找到项目')) {
-        throw error;
-      }
-      this.logger.error('查询项目信息失败', error);
-      throw new Error(`查询项目信息失败: ${error.message}`);
+      this.logger.warn(`API查询失败: ${error.message}`);
     }
-  }
 
-  /**
-   * 模糊匹配项目名称
-   * 
-   * @param {string} projectName - 项目名称
-   * @returns {Object|null} 匹配的项目信息
-   */
-  findProjectByFuzzyMatch(projectName) {
-    const searchTerm = projectName.toLowerCase();
-    
-    for (const [key, project] of this.projectsCache.data) {
-      // 跳过数字ID键
-      if (/^\d+$/.test(key)) continue;
-      
-      const projectKey = key.toLowerCase();
-      const projectNameLower = project.name.toLowerCase();
-      const projectPathLower = project.path.toLowerCase();
-      
-      // 检查是否包含搜索词
-      if (projectKey.includes(searchTerm) || 
-          projectNameLower.includes(searchTerm) || 
-          projectPathLower.includes(searchTerm) ||
-          project.path_with_namespace.toLowerCase().includes(searchTerm)) {
-        return project;
-      }
+    // 2. API查询失败时，使用配置文件作为备选方案
+    if (this.config.projects && this.config.projects[projectName]) {
+      const project = this.config.projects[projectName];
+      this.logger.info(`API查询失败，使用配置文件中的项目: ${projectName} (ID: ${project.id})`);
+      return project.id;
     }
     
-    return null;
-  }
-
-  /**
-   * 获取项目名称建议
-   * 
-   * @param {string} projectName - 项目名称
-   * @returns {Array<string>} 建议的项目名称列表
-   */
-  getProjectSuggestions(projectName) {
-    const searchTerm = projectName.toLowerCase();
-    const suggestions = new Set();
-    const maxSuggestions = 5;
-    
-    for (const [key, project] of this.projectsCache.data) {
-      // 跳过数字ID键
-      if (/^\d+$/.test(key)) continue;
-      
-      const projectKey = key.toLowerCase();
-      const distance = this.calculateLevenshteinDistance(searchTerm, projectKey);
-      
-      // 如果编辑距离小于等于3，认为是相似的
-      if (distance <= 3 && suggestions.size < maxSuggestions) {
-        suggestions.add(project.name);
-      }
-    }
-    
-    return Array.from(suggestions);
-  }
-
-  /**
-   * 计算两个字符串的编辑距离
-   * 
-   * @param {string} str1 - 字符串1
-   * @param {string} str2 - 字符串2
-   * @returns {number} 编辑距离
-   */
-  calculateLevenshteinDistance(str1, str2) {
-    const matrix = [];
-    const len1 = str1.length;
-    const len2 = str2.length;
-
-    for (let i = 0; i <= len2; i++) {
-      matrix[i] = [i];
-    }
-
-    for (let j = 0; j <= len1; j++) {
-      matrix[0][j] = j;
-    }
-
-    for (let i = 1; i <= len2; i++) {
-      for (let j = 1; j <= len1; j++) {
-        if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
-          matrix[i][j] = matrix[i - 1][j - 1];
-        } else {
-          matrix[i][j] = Math.min(
-            matrix[i - 1][j - 1] + 1,
-            matrix[i][j - 1] + 1,
-            matrix[i - 1][j] + 1
-          );
-        }
-      }
-    }
-
-    return matrix[len2][len1];
+    // 3. 都没找到项目，给出错误信息和建议
+    const configProjects = this.config.projects ? Object.keys(this.config.projects) : [];
+    throw new Error(
+      `未找到项目 "${projectName}"。\n` +
+      `请检查项目名称、路径或命名空间路径是否正确。\n` +
+      `您可以使用以下格式之一:\n` +
+      `- 项目名称: "MyProject"\n` +
+      `- 项目路径: "myproject"\n` +
+      `- 命名空间路径: "group/myproject"\n` +
+      `- 项目ID: "123"\n` +
+      (configProjects.length > 0 ? 
+        `\n📋 配置文件中的项目: ${configProjects.join(', ')}\n` : '') +
+      `\n💡 提示: 使用 "node index.js --list-projects" 查看所有可用项目`
+    );
   }
 
   /**
@@ -2335,56 +2221,41 @@ async function listProjects() {
     console.log('🌐 从GitLab API获取的项目：');
     console.log(''.padEnd(80, '='));
     
-    await reviewer.refreshProjectsCache(true);
+    // 直接获取项目列表，不使用缓存
+    const projects = await reviewer.api.Projects.all({
+      simple: true,
+      per_page: 100,
+      membership: true,
+      archived: false,
+      sort: 'last_activity_desc'
+    });
     
-    // 去重并收集项目信息
-    const uniqueProjects = new Map();
-    for (const [key, project] of reviewer.projectsCache.data) {
-      // 跳过数字ID键，避免重复
-      if (!/^\d+$/.test(key)) {
-        uniqueProjects.set(project.id, project);
-      }
-    }
-    
-    // 按最近活动时间排序
-    const sortedProjects = Array.from(uniqueProjects.values())
-      .sort((a, b) => new Date(b.last_activity_at) - new Date(a.last_activity_at));
-    
-    console.log(`总计: ${sortedProjects.length} 个项目\n`);
+    console.log(`总计: ${projects.length} 个项目\n`);
     
     // 分页显示项目
     const pageSize = 20;
-    let currentPage = 0;
+    const displayProjects = projects.slice(0, pageSize);
     
-    do {
-      const start = currentPage * pageSize;
-      const end = Math.min(start + pageSize, sortedProjects.length);
-      const pageProjects = sortedProjects.slice(start, end);
-      
-      for (const project of pageProjects) {
-        const lastActivity = new Date(project.last_activity_at).toLocaleDateString('zh-CN');
-        console.log(`🏗️  ${project.name}`);
-        console.log(`   ID: ${project.id}`);
-        console.log(`   路径: ${project.path_with_namespace}`);
-        console.log(`   描述: ${project.description || '无描述'}`);
-        console.log(`   最近活动: ${lastActivity}`);
-        console.log(`   URL: ${project.web_url}`);
-        console.log('');
-      }
-      
-      // 如果还有更多项目，询问是否继续
-      if (end < sortedProjects.length) {
-        console.log(`显示 ${start + 1}-${end} / ${sortedProjects.length} 个项目`);
-        console.log('\n💡 提示：您可以使用以下任一方式来引用项目：');
-        console.log('   - 项目名称（如："ZM App"）');
-        console.log('   - 项目路径（如："zm-app"）');  
-        console.log('   - 命名空间路径（如："dreame/zm-app"）');
-        console.log('   - 项目ID（如："9831"）');
-        break;
-      }
-      
-      currentPage++;
-    } while (currentPage * pageSize < sortedProjects.length);
+    for (const project of displayProjects) {
+      const lastActivity = new Date(project.last_activity_at).toLocaleDateString('zh-CN');
+      console.log(`🏗️  ${project.name}`);
+      console.log(`   ID: ${project.id}`);
+      console.log(`   路径: ${project.path_with_namespace}`);
+      console.log(`   描述: ${project.description || '无描述'}`);
+      console.log(`   最近活动: ${lastActivity}`);
+      console.log(`   URL: ${project.web_url}`);
+      console.log('');
+    }
+    
+    if (projects.length > pageSize) {
+      console.log(`显示前 ${pageSize} 个项目，总计 ${projects.length} 个项目`);
+    }
+    
+    console.log('\n💡 提示：您可以使用以下任一方式来引用项目：');
+    console.log('   - 项目名称（如："ZM App"）');
+    console.log('   - 项目路径（如："zm-app"）');  
+    console.log('   - 命名空间路径（如："dreame/zm-app"）');
+    console.log('   - 项目ID（如："9831"）');
     
   } catch (error) {
     console.error('❌ 获取项目列表失败:', error.message);

@@ -1,26 +1,24 @@
 #!/usr/bin/env node
 
 /**
- * 安全配置加载器 - 优化版本
+ * 安全配置加载器 - 独立运行优化版本
  * 
- * 这个模块提供安全、可靠的配置文件加载功能，支持：
+ * 这个模块提供安全、可靠的配置文件加载功能，专为独立运行设计：
  * - 环境变量替换和验证
  * - 敏感信息保护和加密
  * - 配置文件验证和结构检查
- * - 单例模式和缓存机制
  * - 多环境配置支持
- * - 配置变更监听和热重载
+ * - 无缓存设计，每次独立加载
  * 
  * 功能特性：
  * - 🔒 敏感信息安全处理
- * - ⚡ 高性能缓存机制
  * - 🛡️ 完整的输入验证
  * - 📝 详细的错误诊断
- * - 🔄 配置热重载支持
  * - 🌍 多环境配置管理
+ * - ⚡ 独立运行优化
  * 
  * @author AI Assistant
- * @version 2.0.0
+ * @version 3.0.0
  * @license MIT
  * @since 2024
  */
@@ -113,39 +111,26 @@ class ConfigValidationError extends Error {
 /**
  * 安全配置加载器类
  * 
- * 提供完整的配置管理功能，包括：
+ * 提供完整的配置管理功能，专为独立运行设计：
  * - 安全的配置文件加载和解析
  * - 环境变量替换和验证
  * - 敏感信息保护和脱敏
  * - 配置结构验证和错误诊断
- * - 配置缓存和性能优化
  * - 多环境支持和配置继承
  */
 class ConfigLoader extends EventEmitter {
   /**
    * 构造函数
-   * 初始化配置加载器
+   * 初始化配置加载器（无缓存模式）
    */
   constructor() {
     super();
-    
-    // 配置缓存
-    this.configCache = new Map();
-    this.configHash = null;
-    this.lastLoadTime = null;
-    
-    // 环境变量缓存
-    this.envCache = new Map();
-    
-    // 文件监听器
-    this.configWatchers = new Map();
     
     // 加载统计
     this.loadStats = {
       totalLoads: 0,
       successfulLoads: 0,
       failedLoads: 0,
-      cacheHits: 0,
       averageLoadTime: 0
     };
     
@@ -302,11 +287,6 @@ class ConfigLoader extends EventEmitter {
    * @private
    */
   replaceEnvVarsInString(str) {
-    // 缓存检查
-    if (this.envCache.has(str)) {
-      return this.envCache.get(str);
-    }
-    
     let result = str;
     
     // 替换 ${VAR} 格式
@@ -329,8 +309,6 @@ class ConfigLoader extends EventEmitter {
       return value;
     });
     
-    // 缓存结果
-    this.envCache.set(str, result);
     return result;
   }
 
@@ -516,26 +494,17 @@ class ConfigLoader extends EventEmitter {
 
   /**
    * 主配置加载方法
-   * 加载并验证配置文件，支持缓存和错误恢复
+   * 加载并验证配置文件，每次独立加载
    * 
    * @param {string} configPath - 配置文件路径
-   * @param {boolean} useCache - 是否使用缓存
    * @returns {Promise<Object>} 加载的配置对象
    */
-  async loadConfig(configPath = 'config/config.json', useCache = true) {
+  async loadConfig(configPath = 'config/config.json') {
     const startTime = Date.now();
     this.loadStats.totalLoads++;
     
     try {
       const fullPath = path.resolve(process.cwd(), configPath);
-      
-      // 检查缓存
-      if (useCache && this.configCache.has(fullPath)) {
-        const cachedConfig = this.configCache.get(fullPath);
-        this.loadStats.cacheHits++;
-        this.logger.debug(`使用缓存配置: ${configPath}`);
-        return cachedConfig;
-      }
       
       // 首先加载环境变量
       await this.loadAllEnvFiles();
@@ -556,20 +525,6 @@ class ConfigLoader extends EventEmitter {
       
       // 验证配置
       config = this.validateConfig(config);
-      
-      // 计算哈希
-      const newHash = this.calculateConfigHash(config);
-      
-      // 检查配置是否发生变更
-      if (this.configHash && this.configHash !== newHash) {
-        this.emit('configChanged', config, this.configCache.get(fullPath));
-      }
-      
-      this.configHash = newHash;
-      this.lastLoadTime = new Date().toISOString();
-      
-      // 缓存配置
-      this.configCache.set(fullPath, config);
       
       // 记录成功统计
       const duration = Date.now() - startTime;

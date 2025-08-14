@@ -27,7 +27,6 @@
 import OpenAI from 'openai';
 import fs from 'fs/promises';
 import path from 'path';
-import { createHash } from 'crypto';
 import ReviewStandardsManager from '../utils/review-standards-manager.js';
 
 /**
@@ -95,7 +94,6 @@ class OpenAIAnalyzer {
   constructor(config) {
     this.config = config;
     this.aiConfig = config.ai_config?.openai || {};
-    this.reviewPrompts = config.ai_config?.review_prompts || {};
     
     // 初始化Review标准管理器
     this.reviewStandardsManager = new ReviewStandardsManager();
@@ -110,13 +108,8 @@ class OpenAIAnalyzer {
       failedRequests: 0,
       totalTokensUsed: 0,
       totalCost: 0,
-      averageResponseTime: 0,
-      cacheHits: 0
+      averageResponseTime: 0
     };
-    
-    // 结果缓存
-    this.resultCache = new Map();
-    this.maxCacheSize = 100;
     
     // 日志器
     this.logger = console;
@@ -242,15 +235,6 @@ class OpenAIAnalyzer {
       this.logger.info(`🔍 检测到主要语言: ${detectedLanguage || '未知'}`);
       this.logger.info(`📁 检测到项目类型: ${projectType || '通用'}`);
       
-      // 检查缓存
-      const cacheKey = this.generateCacheKey(processedDiff, mrDetails);
-      const cachedResult = this.getCachedResult(cacheKey);
-      if (cachedResult) {
-        this.analysisStats.cacheHits++;
-        this.logger.info('📋 使用缓存的分析结果');
-        return cachedResult;
-      }
-      
       // 构建分析请求（传递语言和项目类型信息）
       const analysisPrompt = this.buildComprehensivePrompt(processedDiff, mrDetails, detectedLanguage, projectType);
       
@@ -262,9 +246,6 @@ class OpenAIAnalyzer {
       
       // 后处理和增强
       const enhancedResult = await this.enhanceAnalysisResult(analysisResult, processedDiff, mrDetails);
-      
-      // 缓存结果
-      this.cacheResult(cacheKey, enhancedResult);
       
       // 更新统计信息
       const duration = Date.now() - startTime;
@@ -1315,58 +1296,6 @@ class OpenAIAnalyzer {
     }
     
     return recommendations;
-  }
-
-  /**
-   * 生成缓存键
-   * @private
-   */
-  generateCacheKey(processedDiff, mrDetails) {
-    const contentHash = createHash('md5')
-      .update(JSON.stringify(processedDiff))
-      .update(mrDetails.title || '')
-      .update(mrDetails.updated_at || '')
-      .digest('hex');
-    
-    return `analysis_${contentHash}`;
-  }
-
-  /**
-   * 获取缓存结果
-   * @private
-   */
-  getCachedResult(cacheKey) {
-    if (this.resultCache.has(cacheKey)) {
-      const cached = this.resultCache.get(cacheKey);
-      
-      // 检查缓存是否过期（24小时）
-      const now = Date.now();
-      if (now - cached.timestamp < 24 * 60 * 60 * 1000) {
-        return cached.result;
-      }
-      
-      // 删除过期缓存
-      this.resultCache.delete(cacheKey);
-    }
-    
-    return null;
-  }
-
-  /**
-   * 缓存结果
-   * @private
-   */
-  cacheResult(cacheKey, result) {
-    // 限制缓存大小
-    if (this.resultCache.size >= this.maxCacheSize) {
-      const firstKey = this.resultCache.keys().next().value;
-      this.resultCache.delete(firstKey);
-    }
-    
-    this.resultCache.set(cacheKey, {
-      result,
-      timestamp: Date.now()
-    });
   }
 
   /**

@@ -3,7 +3,7 @@
     "host": "https://git.dreame.tech",
     "token": "${GITLAB_TOKEN}"
   },
-  "_projects_comment": "projects配置现在是可选的。如果不配置，系统将通过GitLab API自动获取所有可访问的项目",
+  "_projects_comment": "projects配置是可选的，作为API查询的备选方案。系统会优先通过GitLab API获取最新项目信息，只有API查询失败时才使用此配置",
   "projects": {
     "ZM App": {
       "id": 9831,
@@ -67,11 +67,6 @@
       "timeout": 60000,
       "fallback_to_openai": true
     },
-
-
-
-
-
     "aliyun_bailian": {
       "api_key": "your_openai_api_key_here",
       "model": "qwen-max",
@@ -80,20 +75,6 @@
       "timeout": 600000,
       "max_tokens": 8192,
       "temperature": 0.1
-    },
-    "review_prompts": {
-      "_note": "Review提示词配置已迁移到统一的review-standards-config.json",
-      "config_file": "review-standards-config.json",
-      "use_unified_standards": true,
-      "legacy_system_prompt": "你是一个专业的代码审查专家，专注于Flutter/Dart、JavaScript/TypeScript、Java、Python等语言的代码质量分析。",
-      "legacy_analysis_focus": [
-        "代码质量和最佳实践",
-        "潜在的bug和逻辑错误", 
-        "安全漏洞和风险点",
-        "性能优化建议",
-        "代码可维护性和可读性",
-        "架构设计合理性"
-      ]
     }
   },
   "notification": {

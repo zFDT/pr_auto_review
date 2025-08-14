@@ -14,6 +14,7 @@ class ReviewStandardsManager {
   constructor() {
     // 从当前工作目录查找配置文件
     this.configDir = process.cwd() + '/config';
+    this.unifiedConfigPath = this.configDir + '/unified-flutter-review-config.json';
     this.standardsConfigPath = this.configDir + '/review-standards-config.json';
     this.mainConfigPath = this.configDir + '/config.json';
     this.flutterConfigPath = this.configDir + '/flutter-review-config.json';
@@ -23,19 +24,113 @@ class ReviewStandardsManager {
   
   /**
    * 加载review标准配置
+   * 优先使用新的统一配置文件，如果不存在则使用旧的配置文件
    */
   loadStandards() {
     try {
-      if (existsSync(this.standardsConfigPath)) {
+      // 优先使用新的统一配置文件
+      if (existsSync(this.unifiedConfigPath)) {
+        const content = readFileSync(this.unifiedConfigPath, 'utf-8');
+        const unifiedConfig = JSON.parse(content);
+        
+        // 将统一配置转换为旧的格式以保持兼容性
+        this.standards = this.convertUnifiedConfigToLegacyFormat(unifiedConfig);
+        console.log('✅ 使用统一Flutter评审配置文件');
+        
+      } else if (existsSync(this.standardsConfigPath)) {
         const content = readFileSync(this.standardsConfigPath, 'utf-8');
         this.standards = JSON.parse(content);
+        console.log('⚠️  使用旧的review标准配置文件，建议迁移到unified-flutter-review-config.json');
+        
       } else {
-        throw new Error('Review standards config file not found');
+        throw new Error('未找到review配置文件 (unified-flutter-review-config.json 或 review-standards-config.json)');
       }
     } catch (error) {
       console.error('❌ 加载review标准配置失败:', error.message);
       throw error;
     }
+  }
+  
+  /**
+   * 将新的统一配置格式转换为旧的格式以保持兼容性
+   * @param {Object} unifiedConfig - 统一配置
+   * @returns {Object} 转换后的配置
+   */
+  convertUnifiedConfigToLegacyFormat(unifiedConfig) {
+    const config = unifiedConfig.unified_flutter_review_config;
+    
+    return {
+      global_review_standards: {
+        description: config.description || "Flutter项目代码审查标准配置",
+        version: config.version || "3.0.0",
+        last_updated: config.last_updated,
+        
+        system_prompts: config.ai_analysis_config?.system_prompts || {
+          base_system_prompt: "你是一个专精Flutter开发的代码审查专家。"
+        },
+        
+        analysis_focus_areas: this.convertReviewFocusAreasToLegacyFormat(config.review_focus_areas || {}),
+        
+        output_format_requirements: config.ai_analysis_config?.output_format_requirements || {}
+      },
+      
+      language_specific_standards: {
+        flutter_dart: {
+          enabled: true,
+          extends: "global_review_standards",
+          config_file: "unified-flutter-review-config.json"
+        }
+      }
+    };
+  }
+  
+  /**
+   * 转换评审焦点区域格式
+   * @param {Object} reviewFocusAreas - 新格式的评审焦点区域
+   * @returns {Object} 旧格式的分析焦点区域
+   */
+  convertReviewFocusAreasToLegacyFormat(reviewFocusAreas) {
+    const converted = {};
+    
+    for (const [key, area] of Object.entries(reviewFocusAreas)) {
+      if (area.enabled) {
+        converted[key] = {
+          enabled: area.enabled,
+          weight: area.weight || 20,
+          items: this.extractItemsFromArea(area)
+        };
+      }
+    }
+    
+    return converted;
+  }
+  
+  /**
+   * 从区域配置中提取检查项
+   * @param {Object} area - 区域配置
+   * @returns {Array} 检查项数组
+   */
+  extractItemsFromArea(area) {
+    const items = [];
+    
+    if (area.checks) {
+      for (const [checkKey, check] of Object.entries(area.checks)) {
+        if (check.rules && Array.isArray(check.rules)) {
+          items.push(...check.rules);
+        }
+        if (check.items && Array.isArray(check.items)) {
+          items.push(...check.items);
+        }
+        if (check.checks && Array.isArray(check.checks)) {
+          items.push(...check.checks);
+        }
+        if (typeof check === 'string') {
+          items.push(check);
+        }
+      }
+    }
+    
+    return items.length > 0 ? items : [area.description || `${area.weight || 20}权重的检查项`];
   }
   
   /**
