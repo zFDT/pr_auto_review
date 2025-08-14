@@ -34,10 +34,10 @@ class HealthChecker {
       await this.checkAIServices();
       await this.checkFilePermissions();
       await this.checkReportsDirectory();
-      
+
       this.generateOverallStatus();
       this.printResults();
-      
+
     } catch (error) {
       console.error('❌ 健康检查失败:', error.message);
       process.exit(1);
@@ -46,7 +46,7 @@ class HealthChecker {
 
   async checkConfig() {
     console.log('📋 检查配置文件...');
-    
+
     try {
       this.config = await configLoader.loadConfig();
       this.results.config.status = 'healthy';
@@ -61,20 +61,20 @@ class HealthChecker {
 
   async checkDependencies() {
     console.log('\n📦 检查依赖包...');
-    
+
     try {
       const { stdout } = await execAsync('npm ls --depth=0 --json');
       const packageInfo = JSON.parse(stdout);
-      
+
       const requiredDeps = ['@gitbeaker/rest', 'openai', 'node-fetch'];
       const missingDeps = [];
-      
+
       for (const dep of requiredDeps) {
         if (!packageInfo.dependencies || !packageInfo.dependencies[dep]) {
           missingDeps.push(dep);
         }
       }
-      
+
       if (missingDeps.length === 0) {
         this.results.dependencies.status = 'healthy';
         this.results.dependencies.message = '所有依赖包正常';
@@ -93,7 +93,7 @@ class HealthChecker {
 
   async checkAIServices() {
     console.log('\n🤖 检查AI服务...');
-    
+
     if (!this.config) {
       console.log('  ⚠️ 无法检查AI服务（配置未加载）');
       return;
@@ -132,15 +132,15 @@ class HealthChecker {
 
   async checkFilePermissions() {
     console.log('\n📁 检查文件权限...');
-    
+
     const filesToCheck = [
       './pr-reviewer.js',
-      './config.json',
+      './config/config.json',
       './reports'
     ];
 
     let allGood = true;
-    
+
     for (const file of filesToCheck) {
       try {
         await fs.access(file, fs.constants.R_OK);
@@ -156,27 +156,27 @@ class HealthChecker {
 
   async checkReportsDirectory() {
     console.log('\n📊 检查报告目录...');
-    
+
     try {
       const reportsStat = await fs.stat('./reports');
       if (reportsStat.isDirectory()) {
         const files = await fs.readdir('./reports');
         console.log(`  ✅ 报告目录存在 (${files.length} 个文件)`);
-        
+
         // 检查是否有过期的报告文件
         const oldFiles = [];
         const now = Date.now();
-        
+
         for (const file of files) {
           const filePath = path.join('./reports', file);
           const stat = await fs.stat(filePath);
           const age = (now - stat.mtime.getTime()) / (1000 * 60 * 60 * 24); // 天数
-          
+
           if (age > 30) {
             oldFiles.push(file);
           }
         }
-        
+
         if (oldFiles.length > 0) {
           console.log(`  ⚠️ ${oldFiles.length} 个报告文件超过30天`);
         }
@@ -206,7 +206,7 @@ class HealthChecker {
     console.log('\n' + '='.repeat(50));
     console.log('📊 健康检查总结');
     console.log('='.repeat(50));
-    
+
     const statusIcon = {
       'healthy': '✅',
       'warning': '⚠️',
@@ -215,12 +215,12 @@ class HealthChecker {
     };
 
     console.log(`整体状态: ${statusIcon[this.results.overall]} ${this.results.overall.toUpperCase()}`);
-    
+
     console.log('\n详细信息:');
     console.log(`- 配置文件: ${statusIcon[this.results.config.status]} ${this.results.config.message || this.results.config.status}`);
     console.log(`- 依赖包: ${statusIcon[this.results.dependencies.status]} ${this.results.dependencies.message || this.results.dependencies.status}`);
     console.log(`- 文件权限: ${statusIcon[this.results.file_permissions.status]} ${this.results.file_permissions.status}`);
-    
+
     if (this.results.overall !== 'healthy') {
       console.log('\n🔧 建议操作:');
       if (this.results.config.status === 'error') {

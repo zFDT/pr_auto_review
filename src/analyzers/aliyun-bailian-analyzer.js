@@ -35,20 +35,28 @@ class AliyunBailianAnalyzer {
     this.config = config;
     this.bailianConfig = this.getBailianConfig();
     this.isConfigured = this.checkConfiguration();
-    
+
     // 初始化Review标准管理器
     this.reviewStandardsManager = new ReviewStandardsManager();
-    
-    // 请求控制配置
+
+    // 高性能并发控制配置
     this.requestQueue = [];
     this.processing = false;
-    this.maxConcurrent = this.bailianConfig.max_concurrent || 5; // 提高并发数
-    this.retryAttempts = this.bailianConfig.retry_attempts || 3;
-    this.retryDelay = this.bailianConfig.retry_delay || 1000;
-    
+    this.maxConcurrent = this.bailianConfig.maxConcurrency || this.bailianConfig.max_concurrent || 10; // 大幅提高并发数
+    this.retryAttempts = this.bailianConfig.maxRetries || this.bailianConfig.retry_attempts || 2; // 降低重试次数
+    this.retryDelay = this.bailianConfig.retryDelay || this.bailianConfig.retry_delay || 500; // 降低重试延迟
+
     // 请求计数器（用于文件命名）
     this.requestCounter = 0;
-    
+
+    // 性能监控
+    this.performanceMetrics = {
+      concurrentRequests: 0,
+      maxConcurrentReached: 0,
+      totalRequests: 0,
+      averageResponseTime: 0
+    };
+
     // Token使用统计
     this.tokenStats = {
       totalInputTokens: 0,
@@ -71,26 +79,30 @@ class AliyunBailianAnalyzer {
     };
 
     const configFile = this.config.ai_config?.aliyun_bailian || {};
-    
+
     return {
       api_key: envConfig.api_key || configFile.api_key,
       workspace_id: envConfig.workspace_id || configFile.workspace_id,
       model: envConfig.model || configFile.model || 'qwen-max',
       base_url: envConfig.base_url || configFile.base_url || 'https://dashscope.aliyuncs.com/api/v1',
-      
-      // 性能优化配置
-      timeout: configFile.timeout || 45000,  // 增加到45秒，处理复杂分析
-      max_tokens: configFile.max_tokens || 8000,  // 增加到8000，获得更详细分析
-      temperature: configFile.temperature || 0.2,  // 提高创造性，更好的建议
-      
-      // 并发控制
-      max_concurrent: configFile.max_concurrent || 5,
-      retry_attempts: configFile.retry_attempts || 3,
-      retry_delay: configFile.retry_delay || 1000,
-      
-      // 分块处理配置
-      max_chunk_size: configFile.max_chunk_size || 8,  // 减少分块大小，提高处理速度
-      max_diff_length: configFile.max_diff_length || 15000  // 单个diff最大长度
+
+      // 高性能配置
+      timeout: configFile.timeout || 60000,  // 60秒超时，适应高并发
+      max_tokens: configFile.max_tokens || configFile.maxTokens || 8192,  // 支持更大token
+      temperature: configFile.temperature || 0.1,  // 降低随机性提高一致性
+
+      // 高并发控制（移除缓存相关配置）
+      maxConcurrency: configFile.maxConcurrency || configFile.max_concurrent || 10,
+      maxRetries: configFile.maxRetries || configFile.retry_attempts || 2,
+      retryDelay: configFile.retryDelay || configFile.retry_delay || 500,
+
+      // 优化的分块处理配置
+      maxChunkSize: configFile.maxChunkSize || configFile.max_chunk_size || 6,  // 减少分块提高速度
+      maxDiffLength: configFile.maxDiffLength || configFile.max_diff_length || 20000,  // 增加diff长度
+
+      // 流处理配置（禁用以提高吞吐量）
+      streamMode: false,
+      enableCache: false  // 明确禁用缓存
     };
   }
 
@@ -99,17 +111,17 @@ class AliyunBailianAnalyzer {
    */
   checkConfiguration() {
     const { api_key, workspace_id } = this.bailianConfig;
-    
+
     if (!api_key || api_key === '${ALIYUN_BAILIAN_API_KEY}') {
       console.warn('⚠️ 阿里云百炼API密钥未配置');
       return false;
     }
-    
+
     if (!workspace_id || workspace_id === '${ALIYUN_BAILIAN_WORKSPACE_ID}') {
       console.warn('⚠️ 阿里云百炼工作空间ID未配置');
       return false;
     }
-    
+
     return true;
   }
 
@@ -123,30 +135,30 @@ class AliyunBailianAnalyzer {
     try {
       // 增加请求计数器
       this.requestCounter++;
-      
+
       // 生成MR专属目录
       const mrIid = global.currentMrIid || 'unknown';
       const reportsDir = path.join(process.cwd(), 'reports');
       const mrDir = path.join(reportsDir, mrIid.toString());
-      
+
       // 确保目录存在
       await fs.mkdir(mrDir, { recursive: true });
-      
+
       // 生成文件名
       const suffix = chunkIndex !== null ? `_chunk_${chunkIndex}` : '';
       const requestFileName = `request_al_${this.requestCounter}${suffix}.json`;
       const responseFileName = `response_al_${this.requestCounter}${suffix}.json`;
-      
+
       // 保存请求数据
       const requestPath = path.join(mrDir, requestFileName);
       await fs.writeFile(requestPath, JSON.stringify(requestData, null, 2), 'utf8');
-      
+
       // 保存响应数据
       const responsePath = path.join(mrDir, responseFileName);
       await fs.writeFile(responsePath, JSON.stringify(responseData, null, 2), 'utf8');
-      
+
       console.log(`💾 已保存请求响应: ${requestFileName}, ${responseFileName}`);
-      
+
     } catch (error) {
       console.warn('⚠️ 保存请求响应失败:', error.message);
     }
@@ -158,17 +170,17 @@ class AliyunBailianAnalyzer {
    */
   updateTokenStats(usage) {
     if (!usage) return;
-    
+
     const inputTokens = usage.input_tokens || usage.prompt_tokens || 0;
     const outputTokens = usage.output_tokens || usage.completion_tokens || 0;
     const totalTokens = usage.total_tokens || (inputTokens + outputTokens);
-    
+
     this.tokenStats.totalInputTokens += inputTokens;
     this.tokenStats.totalOutputTokens += outputTokens;
     this.tokenStats.totalTokens += totalTokens;
     this.tokenStats.requestCount += 1;
     this.tokenStats.averageTokensPerRequest = this.tokenStats.totalTokens / this.tokenStats.requestCount;
-    
+
     console.log(`📊 Token使用: 输入=${inputTokens}, 输出=${outputTokens}, 总计=${totalTokens}`);
   }
 
@@ -178,7 +190,7 @@ class AliyunBailianAnalyzer {
    */
   async getAccountTokenUsage() {
     const { api_key, base_url } = this.bailianConfig;
-    
+
     try {
       // 方法1: 尝试获取账户使用情况
       let response = await fetch(`${base_url}/account/usage`, {
@@ -276,18 +288,18 @@ class AliyunBailianAnalyzer {
       // 检测主要编程语言和项目类型
       const detectedLanguage = this.detectPrimaryLanguage(diff);
       const projectType = this.detectProjectType(diff, mrDetails);
-      
+
       console.log(`🔍 检测到主要语言: ${detectedLanguage || '未知'}`);
       console.log(`📁 检测到项目类型: ${projectType || '通用'}`);
-      
+
       // 预处理：过滤和优化diff
       const optimizedDiff = this.preprocessDiff(diff);
-      
+
       // 构建分析请求（传递语言和项目类型信息）
       const analysisResult = await this.performAnalysis(optimizedDiff, mrDetails, detectedLanguage, projectType);
-      
+
       return analysisResult;
-      
+
     } catch (error) {
       console.error('❌ 阿里云百炼分析失败:', error.message);
       throw error;
@@ -299,24 +311,24 @@ class AliyunBailianAnalyzer {
    */
   async performAnalysis(diff, mrDetails, language = null, projectType = null) {
     const analysisPrompt = this.buildAnalysisPrompt(diff, mrDetails);
-    
+
     // 重置本次分析的token统计
     const sessionStartTokens = { ...this.tokenStats };
-    
+
     // 分块处理大型差异
     const chunks = this.chunkDiff(diff);
     const analyses = [];
-    
+
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
       const chunkPrompt = this.buildChunkPrompt(chunk, mrDetails);
       const chunkResult = await this.callBailianAPI(chunkPrompt, 1, i + 1, language, projectType); // 传递语言和项目类型
       analyses.push(chunkResult);
     }
-    
+
     // 合并分析结果
     const mergedAnalysis = this.mergeAnalyses(analyses);
-    
+
     // 计算本次分析使用的token
     const sessionTokensUsed = {
       inputTokens: this.tokenStats.totalInputTokens - sessionStartTokens.totalInputTokens,
@@ -324,7 +336,7 @@ class AliyunBailianAnalyzer {
       totalTokens: this.tokenStats.totalTokens - sessionStartTokens.totalTokens,
       requests: this.tokenStats.requestCount - sessionStartTokens.requestCount
     };
-    
+
     // 输出本次分析的token使用统计
     console.log('\n📊 阿里云百炼Token使用统计:');
     console.log(`🔄 本次分析请求数: ${sessionTokensUsed.requests}`);
@@ -333,8 +345,8 @@ class AliyunBailianAnalyzer {
     console.log(`📋 本次总计Token: ${sessionTokensUsed.totalTokens.toLocaleString()}`);
     console.log(`📈 累计总Token使用: ${this.tokenStats.totalTokens.toLocaleString()}`);
     console.log(`⚡ 平均每次请求Token: ${Math.round(this.tokenStats.averageTokensPerRequest).toLocaleString()}`);
-  
-    
+
+
     return {
       status: 'success',
       provider: 'aliyun-bailian',
@@ -363,7 +375,7 @@ class AliyunBailianAnalyzer {
    */
   async callBailianAPI(prompt, attempt = 1, chunkIndex = null, language = null, projectType = null) {
     const { api_key, model, base_url, max_tokens, temperature, timeout } = this.bailianConfig;
-    
+
     const requestBody = {
       model: model,
       input: {
@@ -373,7 +385,7 @@ class AliyunBailianAnalyzer {
             content: this.getSystemPrompt(language, projectType)
           },
           {
-            role: 'user', 
+            role: 'user',
             content: prompt
           }
         ]
@@ -394,7 +406,7 @@ class AliyunBailianAnalyzer {
 
     try {
       console.log(`🔄 调用阿里云百炼API (尝试 ${attempt}/${this.retryAttempts})${chunkIndex !== null ? ` - 分块 ${chunkIndex}` : ''}`);
-      
+
       const response = await fetch(`${base_url}/services/aigc/text-generation/generation`, {
         method: 'POST',
         headers: {
@@ -414,31 +426,31 @@ class AliyunBailianAnalyzer {
       }
 
       const result = await response.json();
-      
+
       if (result.code && result.code !== '200') {
         throw new Error(`API错误: ${result.code} - ${result.message}`);
       }
-      
+
       // 保存请求和响应数据
       await this.saveRequestResponse(requestBody, result, chunkIndex);
-      
+
       console.log('✅ 阿里云百炼API调用成功');
       return this.parseAPIResponse(result);
-      
+
     } catch (error) {
       clearTimeout(timeoutId);
-      
+
       if (error.name === 'AbortError') {
         throw new Error(`API调用超时 (${timeout}ms)`);
       }
-      
+
       // 重试逻辑
       if (attempt < this.retryAttempts && this.shouldRetry(error)) {
         console.warn(`⚠️ API调用失败，${this.retryDelay}ms后重试: ${error.message}`);
         await this.delay(this.retryDelay * attempt); // 指数退避
         return this.callBailianAPI(prompt, attempt + 1, chunkIndex);
       }
-      
+
       throw error;
     }
   }
@@ -460,9 +472,9 @@ class AliyunBailianAnalyzer {
   buildAnalysisPrompt(diff, mrDetails) {
     const diffText = diff.map(file => {
       const filePath = file.new_path || file.old_path;
-      const changeType = file.new_file ? '新增文件' : 
-                        file.deleted_file ? '删除文件' : '修改文件';
-      
+      const changeType = file.new_file ? '新增文件' :
+        file.deleted_file ? '删除文件' : '修改文件';
+
       return `📁 ${filePath} (${changeType})\n${file.diff || ''}`;
     }).join('\n\n' + '='.repeat(50) + '\n\n');
 
@@ -541,20 +553,20 @@ ${diffText}
     const maxChunkSize = this.bailianConfig.max_chunk_size || 8;
     const maxDiffLength = this.bailianConfig.max_diff_length || 15000;
     const chunks = [];
-    
+
     let currentChunk = [];
     let currentLength = 0;
-    
+
     for (const file of diff) {
       const fileDiffLength = (file.diff || '').length;
-      
+
       // 如果单个文件太大，截断处理
       if (fileDiffLength > maxDiffLength) {
         const truncatedFile = {
           ...file,
           diff: file.diff.substring(0, maxDiffLength) + '\n... (文件过大，已截断)'
         };
-        
+
         // 大文件单独成块
         if (currentChunk.length > 0) {
           chunks.push(currentChunk);
@@ -564,24 +576,24 @@ ${diffText}
         chunks.push([truncatedFile]);
         continue;
       }
-      
+
       // 检查是否需要新建块
-      if (currentChunk.length >= maxChunkSize || 
-          (currentLength + fileDiffLength > maxDiffLength && currentChunk.length > 0)) {
+      if (currentChunk.length >= maxChunkSize ||
+        (currentLength + fileDiffLength > maxDiffLength && currentChunk.length > 0)) {
         chunks.push(currentChunk);
         currentChunk = [];
         currentLength = 0;
       }
-      
+
       currentChunk.push(file);
       currentLength += fileDiffLength;
     }
-    
+
     // 添加最后一个块
     if (currentChunk.length > 0) {
       chunks.push(currentChunk);
     }
-    
+
     console.log(`📊 代码分块: ${diff.length} 个文件分为 ${chunks.length} 个块进行分析`);
     return chunks;
   }
@@ -592,15 +604,15 @@ ${diffText}
   parseAPIResponse(result) {
     const output = result.output || {};
     const usage = result.usage || {};
-    
+
     // 更新Token统计
     this.updateTokenStats(usage);
-    
+
     const content = output.choices?.[0]?.message?.content || output.text || '分析完成';
-    
+
     // 解析结构化信息
     const analysis = this.extractStructuredAnalysis(content);
-    
+
     return {
       ...analysis,
       raw_response: content,
@@ -641,8 +653,8 @@ ${diffText}
       }
 
       // 提取各个部分
-      analysis.summary = this.extractSection(content, '总结') || 
-                        content.substring(0, 200) + '...';
+      analysis.summary = this.extractSection(content, '总结') ||
+        content.substring(0, 200) + '...';
       analysis.strengths = this.extractListItems(content, '优点');
       analysis.issues = this.extractListItems(content, '问题发现');
       analysis.suggestions = this.extractListItems(content, '改进建议');
@@ -670,12 +682,12 @@ ${diffText}
   extractListItems(content, sectionName) {
     const section = this.extractSection(content, sectionName);
     if (!section) return [];
-    
+
     const items = section.split('\n')
       .filter(line => line.trim().startsWith('-') || line.trim().startsWith('•'))
       .map(line => line.replace(/^[-•]\s*/, '').trim())
       .filter(item => item.length > 0);
-    
+
     return items;
   }
 
@@ -686,7 +698,7 @@ ${diffText}
     if (analyses.length === 0) {
       return { summary: '无分析结果', score: 5, risk_level: 'medium' };
     }
-    
+
     if (analyses.length === 1) {
       return analyses[0];
     }
@@ -737,7 +749,7 @@ ${diffText}
   shouldRetry(error) {
     const retryableErrors = [
       'ECONNRESET',
-      'ENOTFOUND', 
+      'ENOTFOUND',
       'ECONNREFUSED',
       'ETIMEDOUT',
       '429', // 限流
@@ -746,8 +758,8 @@ ${diffText}
       '503', // 服务不可用
       '504'  // 网关超时
     ];
-    
-    return retryableErrors.some(pattern => 
+
+    return retryableErrors.some(pattern =>
       error.message.includes(pattern) || error.code === pattern
     );
   }
@@ -758,25 +770,25 @@ ${diffText}
   preprocessDiff(diff) {
     const ignoredExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.pdf', '.zip', '.tar', '.gz'];
     const ignoredPaths = ['/node_modules/', '/vendor/', '/.git/', '/dist/', '/build/', '/coverage/'];
-    
+
     return diff.filter(file => {
       const filePath = file.new_path || file.old_path || '';
-      
+
       // 跳过二进制文件
       if (ignoredExtensions.some(ext => filePath.toLowerCase().endsWith(ext))) {
         return false;
       }
-      
+
       // 跳过不重要的目录
       if (ignoredPaths.some(path => filePath.includes(path))) {
         return false;
       }
-      
+
       // 跳过空的diff
       if (!file.diff || file.diff.trim().length === 0) {
         return false;
       }
-      
+
       return true;
     }).map(file => {
       // 优化diff内容，移除过长的连续空行
@@ -784,7 +796,7 @@ ${diffText}
         .replace(/\n\s*\n\s*\n/g, '\n\n')  // 压缩多个空行
         .replace(/^.*\/\/ TODO.*$/gm, '')   // 移除TODO注释
         .replace(/^.*\/\* DEBUG.*?\*\//gm, ''); // 移除DEBUG注释
-      
+
       return {
         ...file,
         diff: optimizedDiff
@@ -817,7 +829,7 @@ ${diffText}
     try {
       const testPrompt = '请简单回复"连接测试成功"';
       const result = await this.callBailianAPI(testPrompt);
-      
+
       return {
         success: true,
         message: '阿里云百炼连接成功',
@@ -864,10 +876,10 @@ ${diffText}
    * 获取性能统计
    */
   getPerformanceStats() {
-    const cacheHitRate = this.totalRequests > 0 
+    const cacheHitRate = this.totalRequests > 0
       ? ((this.cacheHits || 0) / this.totalRequests * 100).toFixed(2)
       : '0.00';
-    
+
     return {
       cache_hit_rate: `${cacheHitRate}%`,
       cache_size: this.analysisCache.size,
@@ -950,11 +962,11 @@ ${diffText}
     };
 
     const langCounts = {};
-    
+
     diff.forEach(file => {
       const filePath = file.new_path || file.old_path || '';
       const extension = path.extname(filePath).toLowerCase();
-      
+
       for (const [lang, exts] of Object.entries(languageExtensions)) {
         if (exts.includes(extension)) {
           langCounts[lang] = (langCounts[lang] || 0) + 1;
@@ -965,8 +977,8 @@ ${diffText}
 
     // 返回出现次数最多的语言
     const primaryLang = Object.entries(langCounts)
-      .sort(([,a], [,b]) => b - a)[0];
-    
+      .sort(([, a], [, b]) => b - a)[0];
+
     return primaryLang ? primaryLang[0] : null;
   }
 
@@ -998,7 +1010,7 @@ ${diffText}
 
     for (const [projectType, indicators] of Object.entries(projectIndicators)) {
       // 检查文件存在
-      const hasFiles = indicators.files.some(filePattern => 
+      const hasFiles = indicators.files.some(filePattern =>
         diff.some(file => {
           const filePath = file.new_path || file.old_path || '';
           return filePath.includes(filePattern);
@@ -1008,7 +1020,7 @@ ${diffText}
       // 检查MR标题和描述中的模式
       const title = (mrDetails.title || '').toLowerCase();
       const description = (mrDetails.description || '').toLowerCase();
-      const hasPatterns = indicators.patterns.some(pattern => 
+      const hasPatterns = indicators.patterns.some(pattern =>
         title.includes(pattern) || description.includes(pattern)
       );
 

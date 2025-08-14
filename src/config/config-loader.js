@@ -69,15 +69,39 @@ const CONFIG_SCHEMA = {
           api_key: { type: 'string' },
           model: { type: 'string', default: 'gpt-4o' },
           base_url: { type: 'string', default: 'https://api.openai.com/v1' },
-          max_tokens: { type: 'number', min: 100, max: 8000, default: 4000 },
-          temperature: { type: 'number', min: 0, max: 2, default: 0.1 }
+          maxTokens: { type: 'number', min: 100, max: 10000, default: 4000 },
+          temperature: { type: 'number', min: 0, max: 2, default: 0.1 },
+          timeout: { type: 'number', min: 1000, max: 600000, default: 120000 },
+          maxConcurrency: { type: 'number', min: 1, max: 20, default: 6 },
+          maxRetries: { type: 'number', min: 0, max: 10, default: 2 },
+          retryDelay: { type: 'number', min: 100, max: 10000, default: 500 },
+          enableCache: { type: 'boolean', default: false }
         }
       },
       copilot: {
         properties: {
           enabled: { type: 'boolean', default: false },
           vscode_path: { type: 'string' },
-          timeout: { type: 'number', min: 1000, max: 120000, default: 30000 }
+          timeout: { type: 'number', min: 1000, max: 600000, default: 120000 },
+          fallback_to_openai: { type: 'boolean', default: false },
+          maxConcurrency: { type: 'number', min: 1, max: 10, default: 4 },
+          maxRetries: { type: 'number', min: 0, max: 5, default: 1 },
+          enableCache: { type: 'boolean', default: false }
+        }
+      },
+      aliyun_bailian: {
+        properties: {
+          api_key: { type: 'string' },
+          model: { type: 'string', default: 'qwen-max' },
+          workspace_id: { type: 'string' },
+          base_url: { type: 'string', default: 'https://dashscope.aliyuncs.com/api/v1' },
+          timeout: { type: 'number', min: 1000, max: 600000, default: 120000 },
+          maxTokens: { type: 'number', min: 100, max: 10000, default: 8192 },
+          temperature: { type: 'number', min: 0, max: 2, default: 0.1 },
+          maxConcurrency: { type: 'number', min: 1, max: 20, default: 10 },
+          maxRetries: { type: 'number', min: 0, max: 10, default: 2 },
+          retryDelay: { type: 'number', min: 100, max: 10000, default: 500 },
+          enableCache: { type: 'boolean', default: false }
         }
       }
     }
@@ -125,7 +149,7 @@ class ConfigLoader extends EventEmitter {
    */
   constructor() {
     super();
-    
+
     // 加载统计
     this.loadStats = {
       totalLoads: 0,
@@ -133,16 +157,13 @@ class ConfigLoader extends EventEmitter {
       failedLoads: 0,
       averageLoadTime: 0
     };
-    
+
     // 默认配置路径
     this.defaultConfigPaths = [
       'config/config.json',
-      'config/config.local.json',
-      `.env.${process.env.NODE_ENV || 'development'}`,
-      '.env.local',
       '.env'
     ];
-    
+
     this.logger = console; // 可以替换为更复杂的日志系统
   }
 
@@ -156,7 +177,7 @@ class ConfigLoader extends EventEmitter {
   async loadEnvFile(envPath = '.env') {
     try {
       const fullPath = path.resolve(process.cwd(), envPath);
-      
+
       // 检查文件是否存在
       try {
         await fs.access(fullPath);
@@ -164,48 +185,48 @@ class ConfigLoader extends EventEmitter {
         this.logger.warn(`环境变量文件不存在: ${envPath}`);
         return {};
       }
-      
+
       const content = await fs.readFile(fullPath, 'utf8');
       const envVars = {};
-      
+
       // 解析环境变量文件
       content.split('\n').forEach((line, lineNumber) => {
         const trimmed = line.trim();
-        
+
         // 跳过空行和注释
         if (!trimmed || trimmed.startsWith('#')) {
           return;
         }
-        
+
         // 解析键值对
         const equalIndex = trimmed.indexOf('=');
         if (equalIndex === -1) {
           this.logger.warn(`环境变量文件格式错误，行 ${lineNumber + 1}: ${line}`);
           return;
         }
-        
+
         const key = trimmed.substring(0, equalIndex).trim();
         let value = trimmed.substring(equalIndex + 1).trim();
-        
+
         // 移除引号
-        if ((value.startsWith('"') && value.endsWith('"')) || 
-            (value.startsWith("'") && value.endsWith("'"))) {
+        if ((value.startsWith('"') && value.endsWith('"')) ||
+          (value.startsWith("'") && value.endsWith("'"))) {
           value = value.slice(1, -1);
         }
-        
+
         // 处理转义字符
         value = value.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\r/g, '\r');
-        
+
         // 设置环境变量
         if (key && !process.env.hasOwnProperty(key)) {
           process.env[key] = value;
           envVars[key] = value;
         }
       });
-      
+
       this.logger.info(`环境变量文件加载成功: ${envPath} (${Object.keys(envVars).length} 个变量)`);
       return envVars;
-      
+
     } catch (error) {
       this.logger.error(`加载环境变量文件失败: ${envPath}`, error);
       throw new Error(`加载环境变量文件失败: ${error.message}`);
@@ -220,15 +241,12 @@ class ConfigLoader extends EventEmitter {
    */
   async loadAllEnvFiles() {
     const allEnvVars = {};
-    
+
     // 按优先级顺序加载环境变量文件
     const envFiles = [
-      '.env',
-      '.env.local',
-      `.env.${process.env.NODE_ENV || 'development'}`,
-      `.env.${process.env.NODE_ENV || 'development'}.local`
+      '.env'
     ];
-    
+
     for (const envFile of envFiles) {
       try {
         const envVars = await this.loadEnvFile(envFile);
@@ -240,7 +258,7 @@ class ConfigLoader extends EventEmitter {
         }
       }
     }
-    
+
     return allEnvVars;
   }
 
@@ -257,27 +275,27 @@ class ConfigLoader extends EventEmitter {
     if (visited.has(obj)) {
       return obj;
     }
-    
+
     if (typeof obj === 'string') {
       return this.replaceEnvVarsInString(obj);
     }
-    
+
     if (Array.isArray(obj)) {
       return obj.map(item => this.replaceEnvVars(item, visited));
     }
-    
+
     if (obj && typeof obj === 'object') {
       visited.add(obj);
       const result = {};
-      
+
       for (const [key, value] of Object.entries(obj)) {
         result[key] = this.replaceEnvVars(value, visited);
       }
-      
+
       visited.delete(obj);
       return result;
     }
-    
+
     return obj;
   }
 
@@ -288,7 +306,7 @@ class ConfigLoader extends EventEmitter {
    */
   replaceEnvVarsInString(str) {
     let result = str;
-    
+
     // 替换 ${VAR} 格式
     result = result.replace(/\$\{([^}]+)\}/g, (match, varName) => {
       const value = process.env[varName];
@@ -298,7 +316,7 @@ class ConfigLoader extends EventEmitter {
       }
       return value;
     });
-    
+
     // 替换 $VAR 格式
     result = result.replace(/\$([A-Z_][A-Z0-9_]*)/g, (match, varName) => {
       const value = process.env[varName];
@@ -308,7 +326,7 @@ class ConfigLoader extends EventEmitter {
       }
       return value;
     });
-    
+
     return result;
   }
 
@@ -324,17 +342,17 @@ class ConfigLoader extends EventEmitter {
   validateConfig(config, schema = CONFIG_SCHEMA, path = '') {
     const validatedConfig = { ...config };
     const errors = [];
-    
+
     // 验证必需字段
     for (const [key, rule] of Object.entries(schema)) {
       const fieldPath = path ? `${path}.${key}` : key;
       const value = config[key];
-      
+
       if (rule.required && (value === undefined || value === null)) {
         errors.push(`必需字段缺失: ${fieldPath}`);
         continue;
       }
-      
+
       if (value !== undefined && value !== null) {
         try {
           validatedConfig[key] = this.validateField(value, rule, fieldPath);
@@ -346,11 +364,11 @@ class ConfigLoader extends EventEmitter {
         validatedConfig[key] = rule.default;
       }
     }
-    
+
     if (errors.length > 0) {
       throw new ConfigValidationError(`配置验证失败:\n${errors.join('\n')}`);
     }
-    
+
     return validatedConfig;
   }
 
@@ -365,48 +383,48 @@ class ConfigLoader extends EventEmitter {
         throw new ConfigValidationError(`字段类型错误: ${path}，期望 ${rule.type}，实际 ${typeof value}`, path, value);
       }
     }
-    
+
     // 字符串特定验证
     if (typeof value === 'string') {
       if (rule.minLength && value.length < rule.minLength) {
         throw new ConfigValidationError(`字符串太短: ${path}，最小长度 ${rule.minLength}`, path, value);
       }
-      
+
       if (rule.maxLength && value.length > rule.maxLength) {
         throw new ConfigValidationError(`字符串太长: ${path}，最大长度 ${rule.maxLength}`, path, value);
       }
-      
+
       if (rule.pattern && !rule.pattern.test(value)) {
         throw new ConfigValidationError(`字符串格式不正确: ${path}`, path, value);
       }
-      
+
       if (rule.enum && !rule.enum.includes(value)) {
         throw new ConfigValidationError(`枚举值无效: ${path}，有效值: ${rule.enum.join(', ')}`, path, value);
       }
     }
-    
+
     // 数字特定验证
     if (typeof value === 'number') {
       if (rule.min !== undefined && value < rule.min) {
         throw new ConfigValidationError(`数值太小: ${path}，最小值 ${rule.min}`, path, value);
       }
-      
+
       if (rule.max !== undefined && value > rule.max) {
         throw new ConfigValidationError(`数值太大: ${path}，最大值 ${rule.max}`, path, value);
       }
     }
-    
+
     // 对象特定验证
     if (typeof value === 'object' && !Array.isArray(value)) {
       if (rule.minProperties && Object.keys(value).length < rule.minProperties) {
         throw new ConfigValidationError(`对象属性太少: ${path}，最少 ${rule.minProperties} 个属性`, path, value);
       }
-      
+
       if (rule.properties) {
         return this.validateConfig(value, rule.properties, path);
       }
     }
-    
+
     return value;
   }
 
@@ -440,12 +458,12 @@ class ConfigLoader extends EventEmitter {
    */
   sanitizeConfig(config) {
     const sensitiveFields = [
-      'token', 'api_key', 'password', 'secret', 'webhook_url', 
+      'token', 'api_key', 'password', 'secret', 'webhook_url',
       'private_key', 'access_token', 'refresh_token'
     ];
-    
+
     return this.deepClone(config, (key, value) => {
-      if (typeof value === 'string' && sensitiveFields.some(field => 
+      if (typeof value === 'string' && sensitiveFields.some(field =>
         key.toLowerCase().includes(field.toLowerCase()))) {
         // 保留前3个和后3个字符，中间用*代替
         if (value.length > 10) {
@@ -468,17 +486,17 @@ class ConfigLoader extends EventEmitter {
     if (obj === null || typeof obj !== 'object') {
       return obj;
     }
-    
+
     if (Array.isArray(obj)) {
       return obj.map(item => this.deepClone(item, transformer));
     }
-    
+
     const cloned = {};
     for (const [key, value] of Object.entries(obj)) {
       const transformedValue = transformer ? transformer(key, value) : value;
       cloned[key] = this.deepClone(transformedValue, transformer);
     }
-    
+
     return cloned;
   }
 
@@ -502,59 +520,59 @@ class ConfigLoader extends EventEmitter {
   async loadConfig(configPath = 'config/config.json') {
     const startTime = Date.now();
     this.loadStats.totalLoads++;
-    
+
     try {
       const fullPath = path.resolve(process.cwd(), configPath);
-      
+
       // 首先加载环境变量
       await this.loadAllEnvFiles();
-      
+
       // 读取配置文件
       this.logger.info(`加载配置文件: ${configPath}`);
       const configContent = await fs.readFile(fullPath, 'utf8');
       let config;
-      
+
       try {
         config = JSON.parse(configContent);
       } catch (parseError) {
         throw new ConfigValidationError(`配置文件JSON格式错误: ${parseError.message}`);
       }
-      
+
       // 替换环境变量
       config = this.replaceEnvVars(config);
-      
+
       // 验证配置
       config = this.validateConfig(config);
-      
+
       // 记录成功统计
       const duration = Date.now() - startTime;
       this.loadStats.successfulLoads++;
       this.updateLoadStats(duration);
-      
+
       this.logger.info(`配置加载成功: ${configPath} (${duration}ms)`);
-      
+
       // 脱敏日志
       const sanitizedConfig = this.sanitizeConfig(config);
       this.logger.debug('配置内容:', JSON.stringify(sanitizedConfig, null, 2));
-      
+
       return config;
-      
+
     } catch (error) {
       this.loadStats.failedLoads++;
-      
+
       if (error instanceof ConfigValidationError) {
         this.logger.error('配置验证失败:', error.message);
       } else {
         this.logger.error('配置加载失败:', error.message);
       }
-      
+
       // 尝试使用备用配置
       const fallbackConfig = await this.tryLoadFallbackConfig(configPath, 0);
       if (fallbackConfig) {
         this.logger.warn('使用备用配置');
         return fallbackConfig;
       }
-      
+
       throw error;
     }
   }
@@ -569,23 +587,23 @@ class ConfigLoader extends EventEmitter {
       this.logger.error('备用配置加载达到最大递归深度，停止尝试');
       return null;
     }
-    
+
     const fallbackPaths = [
       'config.backup.json',
       'config.default.json',
       'config.example.json'
     ];
-    
+
     for (const fallbackPath of fallbackPaths) {
       // 避免循环尝试同一个文件
       if (fallbackPath === originalPath) {
         continue;
       }
-      
+
       try {
         this.logger.info(`尝试备用配置: ${fallbackPath}`);
         const fullPath = path.resolve(process.cwd(), fallbackPath);
-        
+
         // 检查文件是否存在
         try {
           await fs.access(fullPath);
@@ -593,29 +611,29 @@ class ConfigLoader extends EventEmitter {
           this.logger.debug(`备用配置文件不存在: ${fallbackPath}`);
           continue;
         }
-        
+
         // 直接读取和解析配置文件，不递归调用loadConfig
         const configContent = await fs.readFile(fullPath, 'utf8');
         let config = JSON.parse(configContent);
-        
+
         // 加载环境变量
         await this.loadAllEnvFiles();
-        
+
         // 替换环境变量
         config = this.replaceEnvVars(config);
-        
+
         // 验证配置
         config = this.validateConfig(config);
-        
+
         this.logger.info(`备用配置加载成功: ${fallbackPath}`);
         return config;
-        
+
       } catch (error) {
         this.logger.debug(`备用配置加载失败 ${fallbackPath}:`, error.message);
         // 继续尝试下一个备用配置
       }
     }
-    
+
     return null;
   }
 
@@ -626,7 +644,7 @@ class ConfigLoader extends EventEmitter {
   updateLoadStats(duration) {
     const successfulLoads = this.loadStats.successfulLoads;
     if (successfulLoads > 0) {
-      this.loadStats.averageLoadTime = 
+      this.loadStats.averageLoadTime =
         (this.loadStats.averageLoadTime * (successfulLoads - 1) + duration) / successfulLoads;
     }
   }
@@ -640,45 +658,45 @@ class ConfigLoader extends EventEmitter {
    */
   async startConfigWatcher(configPath = 'config/config.json', callback = null) {
     const fullPath = path.resolve(process.cwd(), configPath);
-    
+
     try {
       // 检查文件是否存在
       await fs.access(fullPath);
-      
+
       // 停止现有的监听器
       if (this.configWatchers.has(fullPath)) {
         this.configWatchers.get(fullPath).close();
       }
-      
+
       // 创建新的监听器
       const watcher = fs.watch(fullPath, { persistent: false }, async (eventType, filename) => {
         if (eventType === 'change') {
           this.logger.info(`配置文件变更检测: ${filename}`);
-          
+
           try {
             // 清除缓存
             this.configCache.delete(fullPath);
-            
+
             // 重新加载配置
             const newConfig = await this.loadConfig(configPath, false);
-            
+
             // 触发回调
             if (callback) {
               callback(newConfig);
             }
-            
+
             this.emit('configReloaded', newConfig);
-            
+
           } catch (error) {
             this.logger.error('配置重新加载失败:', error.message);
             this.emit('configReloadError', error);
           }
         }
       });
-      
+
       this.configWatchers.set(fullPath, watcher);
       this.logger.info(`配置文件监听已启动: ${configPath}`);
-      
+
     } catch (error) {
       this.logger.error(`配置文件监听启动失败: ${error.message}`);
       throw error;
@@ -692,7 +710,7 @@ class ConfigLoader extends EventEmitter {
    */
   stopConfigWatcher(configPath = 'config/config.json') {
     const fullPath = path.resolve(process.cwd(), configPath);
-    
+
     if (this.configWatchers.has(fullPath)) {
       this.configWatchers.get(fullPath).close();
       this.configWatchers.delete(fullPath);
@@ -736,22 +754,22 @@ class ConfigLoader extends EventEmitter {
   validateConfigIntegrity(config) {
     const issues = [];
     const warnings = [];
-    
+
     try {
       // 基本结构验证
       this.validateConfig(config);
-      
+
       // GitLab连接验证
       if (config.gitlab) {
         if (!config.gitlab.host || !config.gitlab.host.startsWith('http')) {
           issues.push('GitLab主机地址格式无效');
         }
-        
+
         if (!config.gitlab.token || config.gitlab.token === '${GITLAB_TOKEN}') {
           issues.push('GitLab token未配置或使用了占位符');
         }
       }
-      
+
       // 项目配置验证
       if (config.projects) {
         const projectCount = Object.keys(config.projects).length;
@@ -765,11 +783,11 @@ class ConfigLoader extends EventEmitter {
           }
         }
       }
-      
+
       // AI配置验证
       if (config.review_settings?.enable_ai_analysis) {
         const provider = config.review_settings.ai_provider;
-        
+
         if (provider === 'openai') {
           const apiKey = process.env.OPENAI_API_KEY || config.ai_config?.openai?.api_key;
           if (!apiKey || apiKey === '${OPENAI_API_KEY}') {
@@ -781,7 +799,7 @@ class ConfigLoader extends EventEmitter {
           }
         }
       }
-      
+
       // 通知配置验证
       if (config.notification?.feishu?.enabled) {
         const webhookUrl = process.env.FEISHU_WEBHOOK_URL || config.notification.feishu.webhook_url;
@@ -789,11 +807,11 @@ class ConfigLoader extends EventEmitter {
           warnings.push('飞书Webhook URL未配置，通知功能将不可用');
         }
       }
-      
+
     } catch (error) {
       issues.push(error.message);
     }
-    
+
     return {
       valid: issues.length === 0,
       issues,
@@ -809,10 +827,10 @@ class ConfigLoader extends EventEmitter {
    */
   generateDiagnosticReport() {
     const stats = this.getLoadStats();
-    const integrity = this.configCache.size > 0 ? 
-      this.validateConfigIntegrity(this.configCache.values().next().value) : 
+    const integrity = this.configCache.size > 0 ?
+      this.validateConfigIntegrity(this.configCache.values().next().value) :
       { valid: false, issues: ['没有已加载的配置'], warnings: [] };
-    
+
     return `
 📋 配置加载器诊断报告
 生成时间: ${new Date().toLocaleString('zh-CN')}
@@ -858,15 +876,15 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   async function main() {
     try {
       console.log('🔧 配置加载器诊断工具\n');
-      
+
       // 加载配置
       const config = await configLoader.loadConfig();
       console.log('✅ 配置加载成功\n');
-      
+
       // 生成诊断报告
       const report = configLoader.generateDiagnosticReport();
       console.log(report);
-      
+
       // 验证配置完整性
       const integrity = configLoader.validateConfigIntegrity(config);
       if (!integrity.valid) {
@@ -875,12 +893,12 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       } else {
         console.log('\n✅ 配置验证通过');
       }
-      
+
     } catch (error) {
       console.error('❌ 配置诊断失败:', error.message);
       process.exit(1);
     }
   }
-  
+
   main();
 }

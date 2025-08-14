@@ -29,9 +29,7 @@
  */
 
 import { Gitlab } from "@gitbeaker/rest";
-import { CopilotAnalyzer } from './src/analyzers/copilot-extension.js';
-import { OpenAIAnalyzer } from './src/analyzers/openai-analyzer.js';
-import { AliyunBailianAnalyzer } from './src/analyzers/aliyun-bailian-analyzer.js';
+import { aiAnalyzerFactory } from './src/analyzers/ai-analyzer-factory.js';
 import { configLoader } from './src/config/config-loader.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -49,18 +47,18 @@ const CONSTANTS = {
   MAX_RETRY_ATTEMPTS: 3,
   RETRY_DELAY_MS: 1000,
   DEFAULT_TIMEOUT_MS: 30000,
-  
+
   // 文件大小限制
   MAX_FILE_SIZE_MB: 100,
   MAX_DIFF_LINES: 10000,
-  
+
   // 服务器配置
   HTTP_SERVER_PORT: 8899,
-  
+
   // 报告管理
   REPORT_ARCHIVE_DAYS: 30,
   MAX_REPORTS_COUNT: 100,
-  
+
   // 质量阈值
   QUALITY_SCORE_THRESHOLDS: {
     EXCELLENT: 9,
@@ -130,7 +128,7 @@ class Logger {
   _log(level, message, data) {
     const timestamp = new Date().toISOString();
     const prefix = `[${timestamp}] [${level}] [${this.component}]`;
-    
+
     console.log(`${prefix} ${message}`);
     if (data && typeof data === 'object') {
       console.log(JSON.stringify(data, null, 2));
@@ -186,12 +184,12 @@ class AIAnalyzer {
   constructor(config) {
     this.config = config;
     this.logger = new Logger('AIAnalyzer');
-    
+
     // AI分析器实例
     this.openaiAnalyzer = null;
     this.copilotAnalyzer = null;
     this.aliyunBailianAnalyzer = null;
-    
+
     // 性能监控
     this.analysisStats = {
       totalRequests: 0,
@@ -200,91 +198,30 @@ class AIAnalyzer {
       averageResponseTime: 0,
       lastAnalysisTime: null
     };
-    
+
     // 初始化AI服务
-    this.initializeAIServices();
-  }
-
-  /**
-   * 初始化所有AI服务
-   * 根据配置和可用性初始化各种AI分析器
-   */
-  initializeAIServices() {
-    const aiConfig = this.config.ai_config;
-    
-    try {
-      // 初始化OpenAI分析器
-      if (aiConfig?.openai && this.isOpenAIConfigured()) {
-        this.openaiAnalyzer = new OpenAIAnalyzer(this.config);
-        this.logger.info('OpenAI分析器初始化成功');
-      }
-      
-      // 初始化阿里云百炼分析器
-      if (aiConfig?.aliyun_bailian && this.isAliyunBailianConfigured()) {
-        this.aliyunBailianAnalyzer = new AliyunBailianAnalyzer(this.config);
-        this.logger.info('阿里云百炼分析器初始化成功');
-      }
-      
-      // 初始化Copilot分析器
-      if (aiConfig?.copilot?.enabled) {
-        this.copilotAnalyzer = new CopilotAnalyzer(this.config);
-        this.logger.info('Copilot分析器初始化成功');
-      }
-      
-      // 检查是否至少有一个可用的分析器
-      if (!this.hasAvailableAnalyzer()) {
-        this.logger.warn('没有可用的AI分析器，将使用基础规则分析');
-      }
-      
-    } catch (error) {
-      this.logger.error('AI服务初始化失败', error);
-    }
-  }
-
-  /**
-   * 检查OpenAI是否正确配置
-   * @returns {boolean} 是否配置正确
-   */
-  isOpenAIConfigured() {
-    const apiKey = process.env.OPENAI_API_KEY || this.config.ai_config?.openai?.api_key;
-    return apiKey && apiKey !== '${OPENAI_API_KEY}';
-  }
-
-  /**
-   * 检查阿里云百炼是否正确配置
-   * @returns {boolean} 是否配置正确
-   */
-  isAliyunBailianConfigured() {
-    const apiKey = process.env.ALIYUN_BAILIAN_API_KEY || this.config.ai_config?.aliyun_bailian?.api_key;
-    const workspaceId = process.env.ALIYUN_BAILIAN_WORKSPACE_ID || this.config.ai_config?.aliyun_bailian?.workspace_id;
-    return apiKey && workspaceId && 
-           apiKey !== '${ALIYUN_BAILIAN_API_KEY}' && 
-           workspaceId !== '${ALIYUN_BAILIAN_WORKSPACE_ID}';
-  }
-
-  /**
-   * 检查是否有可用的AI分析器
-   * @returns {boolean} 是否有可用分析器
-   */
-  hasAvailableAnalyzer() {
-    return (this.aliyunBailianAnalyzer?.isAvailable()) ||
-           (this.openaiAnalyzer?.isAvailable()) || 
-           (this.copilotAnalyzer?.isAvailable());
+    this.initializeAI();
   }
 
   /**
    * 分析代码变更
-   * 根据配置的AI提供商进行智能分析，支持备用策略
+   * 使用配置的AI提供商进行分析，如果AI不可用则直接报错
    * 
    * @param {Array} diff - 代码差异数组
    * @param {Object} mrDetails - MR详细信息
-   * @returns {Promise<Object|null>} 分析结果
+   * @returns {Promise<Object>} 分析结果
+   * @throws {Error} 如果AI分析失败
    */
   async analyzeCodeChanges(diff, mrDetails) {
     // 检查是否启用AI分析
-    if (!this.config.review_settings.enable_ai_analysis) {
-      this.logger.info('AI分析已禁用');
-      return null;
+    if (!this.config.review_settings?.enable_ai_analysis) {
+      this.logger.info('AI分析已禁用，使用基础规则分析');
+      return this.performBasicAnalysis(diff, mrDetails);
+    }
+
+    // 检查AI分析器是否已初始化
+    if (!this.aiAnalyzer) {
+      throw new Error('AI分析器未初始化，请检查配置');
     }
 
     // 记录开始时间
@@ -292,188 +229,67 @@ class AIAnalyzer {
     this.analysisStats.totalRequests++;
 
     try {
-      const provider = this.config.review_settings.ai_provider || 'aliyun_bailian';
-      this.logger.info(`开始使用 ${provider} 进行代码分析`);
+      this.logger.info(`🔍 开始使用 ${this.aiProvider} 进行代码分析`);
 
-      let analysisResult = null;
-
-      // 根据配置选择分析器
-      switch (provider) {
-        case 'aliyun_bailian':
-        case 'bailian':
-          if (this.aliyunBailianAnalyzer?.isAvailable()) {
-            analysisResult = await this.aliyunBailianAnalyzer.analyzeCodeChanges(diff, mrDetails);
-          } else if (this.openaiAnalyzer?.isAvailable()) {
-            this.logger.warn('阿里云百炼分析器不可用，回退到OpenAI');
-            analysisResult = await this.openaiAnalyzer.analyzeCodeChanges(diff, mrDetails);
-          } else if (this.copilotAnalyzer?.isAvailable()) {
-            this.logger.warn('阿里云百炼分析器不可用，回退到Copilot');
-            analysisResult = await this.copilotAnalyzer.analyzeCodeChanges(diff, mrDetails);
-          }
-          break;
-          
-        case 'openai':
-          if (this.openaiAnalyzer?.isAvailable()) {
-            analysisResult = await this.openaiAnalyzer.analyzeCodeChanges(diff, mrDetails);
-          } else if (this.aliyunBailianAnalyzer?.isAvailable()) {
-            this.logger.warn('OpenAI分析器不可用，回退到阿里云百炼');
-            analysisResult = await this.aliyunBailianAnalyzer.analyzeCodeChanges(diff, mrDetails);
-          } else if (this.copilotAnalyzer?.isAvailable()) {
-            this.logger.warn('OpenAI分析器不可用，回退到Copilot');
-            analysisResult = await this.copilotAnalyzer.analyzeCodeChanges(diff, mrDetails);
-          }
-          break;
-
-        case 'copilot':
-        case 'auto-copilot':
-          if (this.copilotAnalyzer?.isAvailable()) {
-            analysisResult = await this.copilotAnalyzer.analyzeCodeChanges(diff, mrDetails);
-          } else if (this.aliyunBailianAnalyzer?.isAvailable()) {
-            this.logger.warn('Copilot分析器不可用，回退到阿里云百炼');
-            analysisResult = await this.aliyunBailianAnalyzer.analyzeCodeChanges(diff, mrDetails);
-          } else if (this.openaiAnalyzer?.isAvailable()) {
-            this.logger.warn('Copilot分析器不可用，回退到OpenAI');
-            analysisResult = await this.openaiAnalyzer.analyzeCodeChanges(diff, mrDetails);
-          }
-          break;
-
-        case 'auto':
-        default:
-          // 自动选择：优先阿里云百炼，然后OpenAI，最后Copilot
-          if (this.aliyunBailianAnalyzer?.isAvailable()) {
-            analysisResult = await this.aliyunBailianAnalyzer.analyzeCodeChanges(diff, mrDetails);
-          } else if (this.openaiAnalyzer?.isAvailable()) {
-            analysisResult = await this.openaiAnalyzer.analyzeCodeChanges(diff, mrDetails);
-          } else if (this.copilotAnalyzer?.isAvailable()) {
-            analysisResult = await this.copilotAnalyzer.analyzeCodeChanges(diff, mrDetails);
-          } else {
-            this.logger.warn(`未知的AI提供商: ${provider}，且无可用分析器`);
-            return null;
-          }
-      }
+      // 直接使用配置的AI分析器，不进行fallback
+      const analysisResult = await aiAnalyzerFactory.analyze(diff, mrDetails);
 
       // 记录性能统计
       const duration = Date.now() - startTime;
       this.updateAnalysisStats(duration, true);
 
-      // 标准化AI分析结果
-      const normalizedResult = this.normalizeAIAnalysisResult(analysisResult);
-      return normalizedResult;
+      this.logger.info(`✅ AI分析完成，耗时: ${duration}ms`);
+      return analysisResult;
 
     } catch (error) {
-      this.logger.error('AI分析失败', error);
-      this.updateAnalysisStats(Date.now() - startTime, false);
-      
-      // 尝试备用分析
-      return await this.performFallbackAnalysis(diff, mrDetails);
+      // 记录错误统计
+      const duration = Date.now() - startTime;
+      this.updateAnalysisStats(duration, false);
+
+      this.logger.error(`❌ ${this.aiProvider} 分析失败: ${error.message}`);
+      throw new Error(`AI代码分析失败: ${error.message}`);
     }
   }
 
   /**
-   * 备用到Copilot分析器
+   * 执行基础规则分析（当AI禁用时使用）
    * @private
    */
-  async fallbackToCopilot(diff, mrDetails) {
-    if (this.copilotAnalyzer?.isAvailable()) {
-      return await this.copilotAnalyzer.analyzeCodeChanges(diff, mrDetails);
-    }
-    return null;
-  }
+  async performBasicAnalysis(diff, mrDetails) {
+    this.logger.info('执行基础规则分析');
 
-  /**
-   * 备用到OpenAI分析器
-   * @private
-   */
-  async fallbackToOpenAI(diff, mrDetails) {
-    if (this.openaiAnalyzer?.isAvailable()) {
-      return await this.openaiAnalyzer.analyzeCodeChanges(diff, mrDetails);
-    }
-    return null;
-  }
+    const issues = [];
 
-  /**
-   * 使用默认策略
-   * 按优先级尝试可用的分析器
-   * @private
-   */
-  async useDefaultStrategy(diff, mrDetails) {
-    // 优先使用OpenAI
-    if (this.openaiAnalyzer?.isAvailable()) {
-      return await this.openaiAnalyzer.analyzeCodeChanges(diff, mrDetails);
-    }
-    
-    // 然后尝试Copilot
-    if (this.copilotAnalyzer?.isAvailable()) {
-      return await this.copilotAnalyzer.analyzeCodeChanges(diff, mrDetails);
-    }
-    
-    return null;
-  }
+    // 基础代码检查
+    for (const file of diff) {
+      if (file.new_path) {
+        // 检查文件大小
+        if (file.diff && file.diff.length > 10000) {
+          issues.push(`文件 ${file.new_path} 变更过大，建议分解为多个较小的提交`);
+        }
 
-  /**
-   * 标准化AI分析结果
-   * 处理不同AI分析器返回格式的差异，确保一致的数据结构
-   * @private
-   * @param {Object} rawResult - 原始AI分析结果
-   * @returns {Object} 标准化后的分析结果
-   */
-  normalizeAIAnalysisResult(rawResult) {
-    if (!rawResult) {
-      return null;
+        // 检查敏感操作
+        if (file.diff && file.diff.includes('console.log')) {
+          issues.push(`文件 ${file.new_path} 包含console.log语句，建议在生产环境前移除`);
+        }
+
+        if (file.diff && /password|secret|key|token/i.test(file.diff)) {
+          issues.push(`文件 ${file.new_path} 可能包含敏感信息，请仔细检查`);
+        }
+      }
     }
 
-    // 如果结果包含analysis字段（如阿里云百炼），提取analysis内容
-    if (rawResult.analysis && typeof rawResult.analysis === 'object') {
-      return {
-        ...rawResult.analysis,
-        provider: rawResult.provider || 'unknown',
-        status: rawResult.status || 'success',
-        timestamp: rawResult.timestamp
-      };
-    }
-
-    // 如果是直接的分析数据（如OpenAI），直接返回
-    if (rawResult.quality_score !== undefined || rawResult.potential_issues !== undefined) {
-      return rawResult;
-    }
-
-    // 如果有status和provider但没有analysis字段，可能是错误或其他格式
-    if (rawResult.status) {
-      return {
-        quality_score: null,
-        potential_issues: [`${rawResult.provider || 'AI'}分析失败: ${rawResult.error || '未知错误'}`],
-        security_concerns: [],
-        performance_impact: '无法进行AI性能分析',
-        maintainability: '无法进行AI可维护性分析',
-        testing_suggestions: ['建议进行人工代码审查'],
-        improvement_suggestions: ['建议检查AI服务配置'],
-        summary: `${rawResult.provider || 'AI'}分析不可用`,
-        provider: rawResult.provider || 'unknown',
-        status: rawResult.status
-      };
-    }
-
-    // 兜底处理
-    return rawResult;
-  }
-
-  /**
-   * 执行备用分析
-   * 当所有AI分析都失败时，提供基础的规则分析
-   * @private
-   */
-  async performFallbackAnalysis(diff, mrDetails) {
-    this.logger.info('执行基础规则分析作为备用方案');
-    
     return {
-      quality_score: 6,
-      potential_issues: ['AI分析不可用，已执行基础检查'],
-      security_concerns: [],
-      performance_impact: '无法进行AI性能分析',
-      maintainability: '建议手动检查代码可维护性',
-      testing_suggestions: ['添加单元测试', '进行集成测试'],
-      improvement_suggestions: ['考虑代码重构', '添加文档注释'],
-      summary: 'AI分析服务不可用，建议手动进行详细review'
+      quality_score: issues.length === 0 ? 8 : Math.max(5, 8 - issues.length),
+      potential_issues: issues.length > 0 ? issues : ['未发现明显问题'],
+      security_concerns: issues.filter(issue => issue.includes('敏感信息')),
+      performance_impact: '需要手动评估性能影响',
+      maintainability: '建议进行人工可维护性评估',
+      testing_suggestions: ['添加相应的单元测试', '确保集成测试覆盖'],
+      improvement_suggestions: ['考虑代码复用', '添加必要的注释'],
+      summary: `基础检查完成，共检测到 ${issues.length} 个问题`,
+      provider: 'basic_rules',
+      analysis_mode: 'basic'
     };
   }
 
@@ -483,17 +299,17 @@ class AIAnalyzer {
    */
   updateAnalysisStats(duration, success) {
     this.analysisStats.lastAnalysisTime = new Date().toISOString();
-    
+
     if (success) {
       this.analysisStats.successfulRequests++;
     } else {
       this.analysisStats.failedRequests++;
     }
-    
+
     // 更新平均响应时间
     const totalSuccessful = this.analysisStats.successfulRequests;
     if (totalSuccessful > 0) {
-      this.analysisStats.averageResponseTime = 
+      this.analysisStats.averageResponseTime =
         (this.analysisStats.averageResponseTime * (totalSuccessful - 1) + duration) / totalSuccessful;
     }
   }
@@ -503,40 +319,11 @@ class AIAnalyzer {
    * @returns {Object} 统计信息对象
    */
   getAnalysisStats() {
-    return { ...this.analysisStats };
-  }
-
-  /**
-   * 测试AI连接
-   * 验证所有配置的AI服务是否可用
-   * 
-   * @returns {Promise<Object>} 测试结果
-   */
-  async testAIConnection() {
-    const results = {
-      openai: { available: false, error: null },
-      copilot: { available: false, error: null }
+    return {
+      ...this.analysisStats,
+      aiProvider: this.aiProvider,
+      aiPerformance: this.aiAnalyzer ? aiAnalyzerFactory.getPerformanceStats() : null
     };
-
-    // 测试OpenAI
-    if (this.openaiAnalyzer) {
-      try {
-        results.openai.available = await this.openaiAnalyzer.testConnection();
-      } catch (error) {
-        results.openai.error = error.message;
-      }
-    }
-
-    // 测试Copilot
-    if (this.copilotAnalyzer) {
-      try {
-        results.copilot.available = await this.copilotAnalyzer.testConnection();
-      } catch (error) {
-        results.copilot.error = error.message;
-      }
-    }
-
-    return results;
   }
 }
 
@@ -558,24 +345,25 @@ class AIAnalyzer {
 class PRReviewer {
   /**
    * 构造函数
-   * 初始化GitLab客户端和AI分析器
+   * 初始化GitLab客户端和AI分析器工厂
    * 
    * @param {Object} config - 应用配置对象
    */
   constructor(config) {
     this.config = config;
     this.logger = new Logger('PRReviewer');
-    
+
     // 初始化GitLab客户端
     this.api = new Gitlab({
       host: config.gitlab.host,
       token: config.gitlab.token,
       timeout: CONSTANTS.DEFAULT_TIMEOUT_MS
     });
-    
-    // 初始化AI分析器
-    this.aiAnalyzer = new AIAnalyzer(config);
-    
+
+    // AI分析器相关
+    this.aiAnalyzer = null;
+    this.aiProvider = null;
+
     // 性能监控
     this.reviewStats = {
       totalReviews: 0,
@@ -583,8 +371,57 @@ class PRReviewer {
       failedReviews: 0,
       averageReviewTime: 0
     };
-    
-    this.logger.info('PR评审器初始化完成');
+
+    this.logger.info('PR评审器初始化完成（AI分析器将在需要时初始化）');
+  }
+
+  /**
+   * 初始化AI分析器
+   * 使用工厂模式创建指定的AI分析器，不支持fallback
+   */
+  async initializeAI() {
+    try {
+      this.logger.info('正在初始化AI分析器...');
+
+      // 检查是否启用AI分析
+      if (!this.config.review_settings?.enable_ai_analysis) {
+        this.logger.info('AI分析已禁用，跳过AI初始化');
+        return;
+      }
+
+      // 使用工厂创建AI分析器
+      this.aiAnalyzer = await aiAnalyzerFactory.createAnalyzer(this.config);
+      this.aiProvider = aiAnalyzerFactory.getProvider();
+
+      this.logger.info(`✅ AI分析器初始化成功，使用提供商: ${this.aiProvider}`);
+
+      // 输出性能统计
+      const performanceStats = aiAnalyzerFactory.getPerformanceStats();
+      this.logger.info(`📊 AI性能配置: 并发=${performanceStats.aiConfig.maxConcurrency}, 超时=${performanceStats.aiConfig.timeout}ms`);
+
+    } catch (error) {
+      this.logger.error(`❌ AI分析器初始化失败: ${error.message}`);
+      throw new Error(`AI初始化失败: ${error.message}`);
+    }
+  }
+
+  /**
+   * 等待初始化完成
+   * 等待异步的AI初始化过程完成
+   */
+  async waitForInitialization() {
+    // 如果AI分析未启用，直接返回
+    if (!this.config.review_settings?.enable_ai_analysis) {
+      this.logger.info('AI分析已禁用，初始化跳过');
+      return;
+    }
+
+    // 等待AI初始化完成
+    if (!this.aiAnalyzer) {
+      await this.initializeAI();
+    }
+
+    this.logger.info('所有组件初始化完成');
   }
 
   /**
@@ -597,7 +434,7 @@ class PRReviewer {
   async searchProjectFromAPI(projectName) {
     try {
       this.logger.info(`正在从GitLab API搜索项目: ${projectName}`);
-      
+
       // 尝试多种搜索方式
       const searchStrategies = [
         // 1. 精确搜索项目名称
@@ -607,10 +444,10 @@ class PRReviewer {
         // 3. 模糊搜索
         { search: projectName, strategy: 'fuzzy_search' }
       ];
-      
+
       for (const { search, strategy } of searchStrategies) {
         this.logger.info(`尝试${strategy}搜索: ${search}`);
-        
+
         // 如果输入的是纯数字，直接作为项目ID查询
         if (/^\d+$/.test(projectName)) {
           try {
@@ -630,7 +467,7 @@ class PRReviewer {
             this.logger.info(`项目ID ${projectName} 不存在或无权限访问`);
           }
         }
-        
+
         // 搜索项目列表
         const projects = await this.api.Projects.all({
           search: search,
@@ -639,13 +476,13 @@ class PRReviewer {
           membership: true,
           archived: false
         });
-        
+
         if (projects && projects.length > 0) {
           // 优先匹配精确名称
           for (const project of projects) {
-            if (project.name === projectName || 
-                project.path === projectName || 
-                project.path_with_namespace === projectName) {
+            if (project.name === projectName ||
+              project.path === projectName ||
+              project.path_with_namespace === projectName) {
               this.logger.info(`精确匹配找到项目: ${project.name} (ID: ${project.id})`);
               return {
                 id: project.id,
@@ -657,7 +494,7 @@ class PRReviewer {
               };
             }
           }
-          
+
           // 如果没有精确匹配，返回第一个结果
           const project = projects[0];
           this.logger.info(`模糊匹配找到项目: ${project.name} (ID: ${project.id})`);
@@ -671,9 +508,9 @@ class PRReviewer {
           };
         }
       }
-      
+
       return null;
-      
+
     } catch (error) {
       this.logger.error('搜索项目失败', error);
       throw new Error(`搜索项目失败: ${error.message}`);
@@ -695,10 +532,10 @@ class PRReviewer {
 
     // 1. 优先通过API查询获取最新的项目信息
     this.logger.info(`正在从GitLab API查询项目: ${projectName}`);
-    
+
     try {
       const project = await this.searchProjectFromAPI(projectName);
-      
+
       if (project) {
         this.logger.info(`从API找到项目: ${project.name} (ID: ${project.id}, 路径: ${project.path_with_namespace})`);
         return project.id;
@@ -713,7 +550,7 @@ class PRReviewer {
       this.logger.info(`API查询失败，使用配置文件中的项目: ${projectName} (ID: ${project.id})`);
       return project.id;
     }
-    
+
     // 3. 都没找到项目，给出错误信息和建议
     const configProjects = this.config.projects ? Object.keys(this.config.projects) : [];
     throw new Error(
@@ -724,7 +561,7 @@ class PRReviewer {
       `- 项目路径: "myproject"\n` +
       `- 命名空间路径: "group/myproject"\n` +
       `- 项目ID: "123"\n` +
-      (configProjects.length > 0 ? 
+      (configProjects.length > 0 ?
         `\n📋 配置文件中的项目: ${configProjects.join(', ')}\n` : '') +
       `\n💡 提示: 使用 "node index.js --list-projects" 查看所有可用项目`
     );
@@ -741,17 +578,17 @@ class PRReviewer {
   async getMRDetails(projectId, mrIid) {
     try {
       this.logger.info(`获取MR详情: 项目${projectId}, MR#${mrIid}`);
-      
+
       const mrDetails = await this.api.MergeRequests.show(projectId, mrIid);
-      
+
       // 验证MR状态
       if (!mrDetails) {
         throw new Error(`MR #${mrIid} 不存在`);
       }
-      
+
       this.logger.info(`MR详情获取成功: ${mrDetails.title}`);
       return mrDetails;
-      
+
     } catch (error) {
       if (error.response?.status === 404) {
         throw new Error(`MR #${mrIid} 不存在，请检查MR编号是否正确`);
@@ -760,7 +597,7 @@ class PRReviewer {
       } else if (error.response?.status === 401) {
         throw new Error('认证失败，请检查GitLab token是否有效');
       }
-      
+
       throw new Error(`获取MR详情失败: ${error.message}`);
     }
   }
@@ -776,16 +613,16 @@ class PRReviewer {
   async getMRDiff(projectId, mrIid) {
     try {
       this.logger.info(`获取代码差异: 项目${projectId}, MR#${mrIid}`);
-      
+
       // 使用正确的 GitLab API 方法
       const diff = await this.api.MergeRequests.allDiffs(projectId, mrIid);
-      
+
       // 过滤和清理差异数据
       const filteredDiff = this.filterAndCleanDiff(diff);
-      
+
       this.logger.info(`代码差异获取成功: ${filteredDiff.length}个文件`);
       return filteredDiff;
-      
+
     } catch (error) {
       this.logger.error('获取代码差异失败', error);
       throw new Error(`获取代码差异失败: ${error.message}`);
@@ -800,7 +637,7 @@ class PRReviewer {
   filterAndCleanDiff(diff) {
     const excludePatterns = this.config.review_settings.exclude_patterns || [];
     const maxFileSize = this.config.review_settings.max_file_size || CONSTANTS.MAX_FILE_SIZE_MB * 1024 * 1024;
-    
+
     return diff.filter(file => {
       // 检查文件是否在排除列表中
       const isExcluded = excludePatterns.some(pattern => {
@@ -808,18 +645,18 @@ class PRReviewer {
         const regex = new RegExp(pattern.replace(/\*/g, '.*'));
         return regex.test(file.new_path || file.old_path);
       });
-      
+
       if (isExcluded) {
         this.logger.debug(`跳过排除文件: ${file.new_path || file.old_path}`);
         return false;
       }
-      
+
       // 检查文件大小
       if (file.diff && file.diff.length > maxFileSize) {
         this.logger.warn(`跳过大文件: ${file.new_path || file.old_path} (${file.diff.length} bytes)`);
         return false;
       }
-      
+
       return true;
     });
   }
@@ -835,13 +672,13 @@ class PRReviewer {
   async getMRComments(projectId, mrIid) {
     try {
       this.logger.info(`获取评论: 项目${projectId}, MR#${mrIid}`);
-      
+
       // 获取讨论评论
       const discussions = await this.api.MergeRequestDiscussions.all(projectId, mrIid);
-      
+
       const discussionNotes = [];
       const diffNotes = [];
-      
+
       discussions.forEach(discussion => {
         discussion.notes.forEach(note => {
           const noteData = {
@@ -851,7 +688,7 @@ class PRReviewer {
             created_at: note.created_at,
             updated_at: note.updated_at
           };
-          
+
           if (note.position) {
             // 这是代码行评论
             noteData.position = note.position;
@@ -862,15 +699,15 @@ class PRReviewer {
           }
         });
       });
-      
+
       this.logger.info(`评论获取成功: ${discussionNotes.length}条讨论, ${diffNotes.length}条代码评论`);
-      
+
       return {
         discussionNotes,
         diffNotes,
         length: discussionNotes.length + diffNotes.length
       };
-      
+
     } catch (error) {
       this.logger.error('获取评论失败', error);
       throw new Error(`获取评论失败: ${error.message}`);
@@ -886,7 +723,7 @@ class PRReviewer {
    */
   analyzeCodeChanges(diff) {
     this.logger.info('开始分析代码变更');
-    
+
     const analysis = {
       totalFiles: diff.length,
       addedLines: 0,
@@ -905,10 +742,10 @@ class PRReviewer {
 
     // 转换语言集合为数组
     analysis.languages = Array.from(analysis.languages);
-    
+
     // 评估复杂度
     analysis.complexity = this.assessComplexity(analysis);
-    
+
     this.logger.info(`代码分析完成: ${analysis.totalFiles}个文件, +${analysis.addedLines}/-${analysis.deletedLines}行`);
     return analysis;
   }
@@ -969,7 +806,7 @@ class PRReviewer {
       '.swift': 'Swift',
       '.kt': 'Kotlin'
     };
-    
+
     return languageMap[extension.toLowerCase()];
   }
 
@@ -980,12 +817,12 @@ class PRReviewer {
   detectPotentialIssues(file, analysis) {
     const settings = this.config.review_settings;
     const filePath = file.new_path || file.old_path;
-    
+
     // 检查console.log语句
     if (settings.check_console_logs && file.diff.includes('console.log')) {
       analysis.potentialIssues.push(`${filePath}: 包含 console.log 语句，建议移除或使用日志库`);
     }
-    
+
     // 检查TODO/FIXME注释
     if (settings.check_todos) {
       const todoMatches = file.diff.match(/TODO|FIXME|HACK|XXX/gi);
@@ -993,18 +830,18 @@ class PRReviewer {
         analysis.potentialIssues.push(`${filePath}: 包含 ${todoMatches.length} 个待完成标记 (${todoMatches.join(', ')})`);
       }
     }
-    
+
     // 检查大文件修改
     const addedLines = (file.diff.match(/^\+/gm) || []).length;
     if (addedLines > settings.max_lines_warning) {
       analysis.potentialIssues.push(`${filePath}: 单个文件新增行数过多 (${addedLines} 行)，建议拆分`);
     }
-    
+
     // 检查硬编码密码或密钥
     if (file.diff.match(/password\s*[=:]\s*["'](?!.*placeholder|.*example)[^"']{8,}|api[_-]?key\s*[=:]\s*["'][^"']+/i)) {
       analysis.potentialIssues.push(`${filePath}: 可能包含硬编码的敏感信息，请使用环境变量`);
     }
-    
+
     // 检查空catch块
     if (file.diff.includes('catch') && file.diff.includes('{}')) {
       analysis.potentialIssues.push(`${filePath}: 包含空的catch块，建议添加错误处理`);
@@ -1018,7 +855,7 @@ class PRReviewer {
   assessComplexity(analysis) {
     const totalChanges = analysis.addedLines + analysis.deletedLines;
     const fileCount = analysis.totalFiles;
-    
+
     if (totalChanges > 2000 || fileCount > 50) {
       return 'very-high';
     } else if (totalChanges > 1000 || fileCount > 20) {
@@ -1049,66 +886,66 @@ class PRReviewer {
    */
   generateReviewReport(projectName, mrIid, mrDetails, diff, comments, analysis, aiAnalysis = null) {
     const timestamp = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-    
+
     // 计算统计信息
     const fileCount = analysis.totalFiles;
     const additionCount = analysis.addedLines;
     const deletionCount = analysis.deletedLines;
     const netChange = additionCount - deletionCount;
-    
+
     // 生成报告头部
     let report = this.generateReportHeader(projectName, mrIid, mrDetails, timestamp);
-    
+
     // 生成变更统计
     report += this.generateChangeStatistics(fileCount, additionCount, deletionCount, netChange, comments.length);
-    
+
     // 生成PR描述
     report += this.generatePRDescription(mrDetails);
-    
+
     // 生成文件变更详情
     report += this.generateFileChanges(analysis);
-    
+
     // 生成潜在问题检测
     report += this.generatePotentialIssues(analysis);
-    
+
     // 生成现有评论汇总
     report += this.generateCommentsSection(comments);
-    
+
     // 生成AI分析结果
     if (aiAnalysis) {
       // 处理不同AI分析器返回的数据结构
       let actualAnalysisData = aiAnalysis;
-      
+
       // 如果是嵌套结构，提取analysis字段
       if (aiAnalysis.analysis && typeof aiAnalysis.analysis === 'object') {
         actualAnalysisData = aiAnalysis.analysis;
-        this.logger.debug('使用嵌套分析数据', { 
-          provider: aiAnalysis.provider, 
+        this.logger.debug('使用嵌套分析数据', {
+          provider: aiAnalysis.provider,
           status: aiAnalysis.status,
-          analysisKeys: Object.keys(actualAnalysisData) 
+          analysisKeys: Object.keys(actualAnalysisData)
         });
       } else {
-        this.logger.debug('使用直接分析数据', { 
-          analysisKeys: Object.keys(actualAnalysisData) 
+        this.logger.debug('使用直接分析数据', {
+          analysisKeys: Object.keys(actualAnalysisData)
         });
       }
-      
+
       report += this.generateAIAnalysisSection(actualAnalysisData);
     } else {
       this.logger.debug('AI分析结果为空，跳过');
     }
-    
+
     // 生成Review建议
     report += this.generateReviewSuggestions(analysis, aiAnalysis);
-    
+
     // 如果启用详细差异，添加代码差异
     if (this.config.review_settings.include_detailed_diff) {
       report += this.generateDetailedDiff(diff);
     }
-    
+
     // 添加报告尾部
     report += this.generateReportFooter();
-    
+
     return report;
   }
 
@@ -1178,7 +1015,7 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
    */
   generateFileChanges(analysis) {
     let section = `## 📁 文件变更详情\n\n`;
-    
+
     if (analysis.newFiles.length > 0) {
       section += `### ✨ 新增文件 (${analysis.newFiles.length} 个)\n`;
       analysis.newFiles.forEach(file => section += `- 📄 ${file}\n`);
@@ -1234,7 +1071,7 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
   generateCommentsSection(comments) {
     if (comments.discussionNotes.length > 0 || comments.diffNotes.length > 0) {
       let section = `## 💬 现有评论\n\n`;
-      
+
       if (comments.discussionNotes.length > 0) {
         section += `### 一般评论 (${comments.discussionNotes.length} 条)\n`;
         comments.discussionNotes.slice(0, 5).forEach(note => {
@@ -1259,10 +1096,10 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
         }
         section += '\n';
       }
-      
+
       return section;
     }
-    
+
     return `## 💬 现有评论\n\n暂无评论。\n\n`;
   }
 
@@ -1272,12 +1109,12 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
    */
   generateAIAnalysisSection(aiAnalysis) {
     let section = `## 🤖 AI智能分析\n\n`;
-    
+
     if (aiAnalysis.quality_score !== null && aiAnalysis.quality_score !== undefined) {
       const scoreEmoji = this.getQualityScoreEmoji(aiAnalysis.quality_score);
       section += `### 代码质量评分: ${scoreEmoji} ${aiAnalysis.quality_score}/10\n\n`;
     }
-    
+
     if (aiAnalysis.summary) {
       section += `### 📋 总体评估\n${aiAnalysis.summary}\n\n`;
     }
@@ -1287,27 +1124,27 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
       aiAnalysis.potential_issues.forEach(issue => section += `- ${issue}\n`);
       section += '\n';
     }
-    
+
     if (aiAnalysis.security_concerns && aiAnalysis.security_concerns.length > 0) {
       section += `### 🔒 安全性考虑\n`;
       aiAnalysis.security_concerns.forEach(concern => section += `- ${concern}\n`);
       section += '\n';
     }
-    
+
     if (aiAnalysis.performance_impact) {
       section += `### ⚡ 性能影响\n${aiAnalysis.performance_impact}\n\n`;
     }
-    
+
     if (aiAnalysis.maintainability) {
       section += `### 🔧 可维护性\n${aiAnalysis.maintainability}\n\n`;
     }
-    
+
     if (aiAnalysis.testing_suggestions && aiAnalysis.testing_suggestions.length > 0) {
       section += `### 🧪 测试建议\n`;
       aiAnalysis.testing_suggestions.forEach(suggestion => section += `- ${suggestion}\n`);
       section += '\n';
     }
-    
+
     if (aiAnalysis.improvement_suggestions && aiAnalysis.improvement_suggestions.length > 0) {
       section += `### 💡 改进建议\n`;
       aiAnalysis.improvement_suggestions.forEach(suggestion => section += `- ${suggestion}\n`);
@@ -1328,8 +1165,8 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
     let actualAnalysisData = null;
     if (aiAnalysis) {
       // 如果是嵌套结构，提取analysis字段
-      actualAnalysisData = aiAnalysis.analysis && typeof aiAnalysis.analysis === 'object' 
-        ? aiAnalysis.analysis 
+      actualAnalysisData = aiAnalysis.analysis && typeof aiAnalysis.analysis === 'object'
+        ? aiAnalysis.analysis
         : aiAnalysis;
     }
 
@@ -1337,15 +1174,15 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
     if (analysis.addedLines > 1000) {
       section += `- ⚠️ 这是一个较大的PR (${analysis.addedLines}行新增)，建议拆分成更小的PR\n`;
     }
-    
+
     if (analysis.totalFiles > 20) {
       section += `- ⚠️ 修改文件较多 (${analysis.totalFiles}个)，请确保每个文件的修改都是必要的\n`;
     }
-    
+
     if (analysis.potentialIssues.length === 0 && (!actualAnalysisData || actualAnalysisData.quality_score >= 7)) {
       section += `- ✅ 代码质量良好，未发现明显问题\n`;
     }
-    
+
     // 基于复杂度的建议
     switch (analysis.complexity) {
       case 'very-high':
@@ -1358,7 +1195,7 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
         section += `- 🟢 变更复杂度适中，建议重点关注核心逻辑\n`;
         break;
     }
-    
+
     // 通用建议
     section += `- 📝 建议详细测试所有修改的功能\n`;
     section += `- 🔍 建议检查是否需要更新相关文档\n`;
@@ -1378,12 +1215,12 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
 
     let section = `## 📄 详细代码差异\n\n`;
     section += `<details>\n<summary>点击展开查看详细差异 (${diff.length} 个文件)</summary>\n\n`;
-    
+
     diff.slice(0, 10).forEach(file => { // 限制显示前10个文件
       const filePath = file.new_path || file.old_path;
       section += `### ${filePath}\n\n`;
       section += '```diff\n';
-      
+
       // 截取差异内容，避免过长
       const diffLines = file.diff.split('\n');
       const maxLines = 100;
@@ -1393,14 +1230,14 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
       } else {
         section += file.diff;
       }
-      
+
       section += '\n```\n\n';
     });
-    
+
     if (diff.length > 10) {
       section += `_... 还有 ${diff.length - 10} 个文件的差异_\n\n`;
     }
-    
+
     section += '</details>\n\n';
     return section;
   }
@@ -1509,21 +1346,21 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
       const mrIid = global.currentMrIid || 'unknown';
       const reportsDir = path.join(__dirname, 'reports');
       const mrDir = path.join(reportsDir, mrIid.toString());
-      
+
       // 确保目录存在
       await fs.mkdir(mrDir, { recursive: true });
-      
+
       // 生成文件名
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const fileName = `review_git_${mrIid}_${timestamp}.txt`;
       const filePath = path.join(mrDir, fileName);
-      
+
       // 写入文件
       await fs.writeFile(filePath, report, 'utf8');
-      
+
       this.logger.info(`报告已保存: ${filePath}`);
       return filePath;
-      
+
     } catch (error) {
       this.logger.error('保存报告失败', error);
       throw new Error(`保存报告失败: ${error.message}`);
@@ -1542,41 +1379,41 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
    */
   generateFeishuCardData(projectName, mrIid, mrDetails, analysis, aiAnalysis = null, reportFilePath = null) {
     const timestamp = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-    
+
     // 计算统计信息
     const fileCount = analysis.totalFiles;
     const additionCount = analysis.addedLines;
     const deletionCount = analysis.deletedLines;
     const netChange = additionCount - deletionCount;
-    
+
     // 状态评估
     const getFileCountStatus = (count) => count > 15 ? '🔴 较多' : count > 10 ? '🟡 中等' : '🟢 合理';
     const getAdditionStatus = (count) => count > 1000 ? '🔴 大量' : count > 500 ? '🟡 较多' : '🟢 适中';
     const getDeletionStatus = (count) => count > 500 ? '🔴 大量' : count > 100 ? '🟡 较多' : '🟢 适中';
     const getNetChangeStatus = (net) => Math.abs(net) > 1000 ? '🔴 重大变更' : Math.abs(net) > 500 ? '🟡 较大变更' : '🟢 正常范围';
-    
+
     // AI评分和建议
     let qualityScore = null;
     let qualityColor = '⚪';
     let aiSummary = '';
     let mainIssues = [];
     let mainSuggestions = [];
-    
+
     if (aiAnalysis) {
       // 处理不同AI分析器返回的数据结构
       let actualAnalysisData = aiAnalysis;
-      
+
       // 如果是嵌套结构，提取analysis字段
       if (aiAnalysis.analysis && typeof aiAnalysis.analysis === 'object') {
         actualAnalysisData = aiAnalysis.analysis;
       }
-      
+
       qualityScore = actualAnalysisData.quality_score;
       if (qualityScore !== null) {
         qualityColor = qualityScore >= 8 ? '🟢' : qualityScore >= 6 ? '🟡' : '🔴';
       }
       aiSummary = actualAnalysisData.summary || '';
-      
+
       // 提取主要问题（限制数量）
       if (actualAnalysisData.potential_issues && actualAnalysisData.potential_issues.length > 0) {
         mainIssues = actualAnalysisData.potential_issues.slice(0, 3);
@@ -1585,7 +1422,7 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
         mainSuggestions = actualAnalysisData.improvement_suggestions.slice(0, 3);
       }
     }
-    
+
     // 构建飞书交互式卡片
     const cardData = {
       msg_type: "interactive",
@@ -1634,7 +1471,7 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
         ]
       }
     };
-    
+
     // 添加AI评分部分
     if (qualityScore !== null) {
       cardData.card.elements.push({
@@ -1645,7 +1482,7 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
         }
       });
     }
-    
+
     // 添加AI总结
     if (aiSummary) {
       cardData.card.elements.push({
@@ -1656,25 +1493,25 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
         }
       });
     }
-    
+
     // 添加问题和建议
     if (mainIssues.length > 0 || analysis.potentialIssues.length > 0) {
       let issuesText = '**⚠️ 主要问题**\n';
-      
+
       // 添加代码检测问题
       if (analysis.potentialIssues.length > 0) {
         analysis.potentialIssues.slice(0, 2).forEach(issue => {
           issuesText += `• ${issue}\n`;
         });
       }
-      
+
       // 添加AI检测问题
       if (mainIssues.length > 0) {
         mainIssues.forEach(issue => {
           issuesText += `• ${issue}\n`;
         });
       }
-      
+
       cardData.card.elements.push({
         tag: "hr"
       });
@@ -1697,14 +1534,14 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
         }
       });
     }
-    
+
     // 添加改进建议
     if (mainSuggestions.length > 0) {
       let suggestionsText = '**💡 改进建议**\n';
       mainSuggestions.forEach(suggestion => {
         suggestionsText += `• ${suggestion}\n`;
       });
-      
+
       cardData.card.elements.push({
         tag: "div",
         text: {
@@ -1713,16 +1550,16 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
         }
       });
     }
-    
+
     // 添加操作按钮
     cardData.card.elements.push({
       tag: "hr"
     });
-    
+
     // 生成报告和JSON文件的下载链接
     const ip = this.getLocalIP();
     let reportDownloadUrl, reportFolderUrl;
-    
+
     if (reportFilePath) {
       // 使用实际的文件路径生成URL
       reportDownloadUrl = this.generateFileURL(reportFilePath);
@@ -1735,7 +1572,7 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
       reportDownloadUrl = `http://${ip}:${CONSTANTS.HTTP_SERVER_PORT}/reports/${mrIid}/${reportFileName}`;
       reportFolderUrl = `http://${ip}:${CONSTANTS.HTTP_SERVER_PORT}/reports/${mrIid}/`;
     }
-    
+
     // 第一行按钮：查看MR、PR查看、Jenkins构建
     cardData.card.elements.push({
       tag: "action",
@@ -1769,7 +1606,7 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
         }
       ]
     });
-    
+
     // 第二行按钮：下载报告、流程产物
     cardData.card.elements.push({
       tag: "action",
@@ -1794,7 +1631,7 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
         }
       ]
     });
-    
+
     return cardData;
   }
 
@@ -1808,13 +1645,13 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
     const mrIidValue = global.currentMrIid || '0';
     const reportsDir = path.join(__dirname, 'reports');
     const mrDir = path.join(reportsDir, mrIidValue.toString());
-    
+
     // 确保目录存在
     await fs.mkdir(mrDir, { recursive: true });
-    
+
     const fileName = `feishu_card_${mrIidValue}.json`;
     const filePath = path.join(mrDir, fileName);
-    
+
     await fs.writeFile(filePath, JSON.stringify(cardData, null, 2), 'utf8');
     return path.resolve(filePath);
   }
@@ -1827,27 +1664,27 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
   async sendFeishuWebhook(cardData) {
     try {
       const feishuConfig = this.config.notification?.feishu;
-      
+
       if (!feishuConfig?.enabled) {
         this.logger.info('飞书通知未启用，跳过发送');
         return false;
       }
-      
+
       const webhookUrl = feishuConfig.webhook_url;
-      
-      if (!webhookUrl || 
-          webhookUrl === '${FEISHU_WEBHOOK_URL}' || 
-          webhookUrl === 'undefined' ||
-          webhookUrl.includes('${') ||
-          webhookUrl === '' ||
-          !webhookUrl.startsWith('https://')) {
+
+      if (!webhookUrl ||
+        webhookUrl === '${FEISHU_WEBHOOK_URL}' ||
+        webhookUrl === 'undefined' ||
+        webhookUrl.includes('${') ||
+        webhookUrl === '' ||
+        !webhookUrl.startsWith('https://')) {
         this.logger.warn('飞书Webhook URL未配置或无效，跳过发送');
         return false;
       }
-      
+
       this.logger.info('正在发送飞书通知...');
       this.logger.info(`Webhook URL: ${webhookUrl.substring(0, 50)}...${webhookUrl.slice(-10)}`);
-      
+
       const response = await fetch(webhookUrl, {
         method: 'POST',
         headers: {
@@ -1855,7 +1692,7 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
         },
         body: JSON.stringify(cardData)
       });
-      
+
       if (response.ok) {
         const result = await response.json();
         this.logger.info('✅ 飞书通知发送成功');
@@ -1867,7 +1704,7 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
         this.logger.error(`错误详情: ${errorText}`);
         return false;
       }
-      
+
     } catch (error) {
       this.logger.error('❌ 发送飞书通知时出错:', error.message);
       return false;
@@ -1885,90 +1722,100 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
   async reviewPR(projectName, mrIid) {
     const startTime = Date.now();
     this.reviewStats.totalReviews++;
-    
+
     try {
       // 设置全局变量供其他函数使用
       global.currentMrIid = mrIid;
-      
+
       this.logger.info(`开始review ${projectName} 的 MR #${mrIid}`);
-      
+
       // 1. 获取项目ID
       const projectId = await this.getProjectId(projectName);
       this.logger.info(`项目ID: ${projectId}`);
-      
+
       // 2. 获取MR详情
       this.logger.info('获取MR详情...');
       const mrDetails = await this.getMRDetails(projectId, mrIid);
       this.logger.info(`标题: ${mrDetails.title}`);
       this.logger.info(`作者: ${mrDetails.author.name}`);
       this.logger.info(`分支: ${mrDetails.source_branch} → ${mrDetails.target_branch}`);
-      
+
       // 3. 获取代码差异
       this.logger.info('获取代码差异...');
       const diff = await this.getMRDiff(projectId, mrIid);
       this.logger.info(`变更文件数: ${diff.length}`);
-      
+
       // 4. 获取评论
       this.logger.info('获取评论...');
       const comments = await this.getMRComments(projectId, mrIid);
       this.logger.info(`评论数: ${comments.length}`);
-      
+
       // 5. 分析代码变更
       this.logger.info('分析代码变更...');
       const analysis = this.analyzeCodeChanges(diff);
-      
+
       // 6. AI智能分析
       let aiAnalysis = null;
       if (this.config.review_settings.enable_ai_analysis) {
         this.logger.info('执行AI智能分析...');
         try {
-           aiAnalysis = await this.aiAnalyzer.analyzeCodeChanges(diff, mrDetails);
-          if (aiAnalysis) {
-            this.logger.info('AI分析完成');
-            this.logger.debug('AI分析结果结构:', { 
-              status: aiAnalysis.status, 
-              provider: aiAnalysis.provider,
-              hasAnalysis: !!aiAnalysis.analysis,
-              analysisKeys: aiAnalysis.analysis ? Object.keys(aiAnalysis.analysis) : []
-            });
+          // 确保AI分析器已初始化
+          if (!this.aiAnalyzer) {
+            this.logger.info('AI分析器未初始化，正在初始化...');
+            await this.initializeAI();
+          }
+          
+          if (this.aiAnalyzer) {
+            aiAnalysis = await this.aiAnalyzer.analyzeCodeChanges(diff, mrDetails);
+            if (aiAnalysis) {
+              this.logger.info('AI分析完成');
+              this.logger.debug('AI分析结果结构:', {
+                status: aiAnalysis.status,
+                provider: aiAnalysis.provider,
+                hasAnalysis: !!aiAnalysis.analysis,
+                analysisKeys: aiAnalysis.analysis ? Object.keys(aiAnalysis.analysis) : []
+              });
+            } else {
+              this.logger.info('AI分析跳过');
+            }
           } else {
-            this.logger.info('AI分析跳过');
+            this.logger.warn('AI分析器初始化失败，跳过AI分析');
           }
         } catch (aiError) {
           this.logger.warn('AI分析失败', aiError);
         }
       }
-      
+
       // 7. 生成报告
       this.logger.info('生成review报告...');
       const report = this.generateReviewReport(projectName, mrIid, mrDetails, diff, comments, analysis, aiAnalysis);
-      
+
       // 8. 保存报告
       this.logger.info('保存报告...');
       const filePath = await this.saveReportToFile(report);
-      
+
       // 9. 生成飞书卡片数据
       this.logger.info('生成飞书卡片数据...');
       const feishuCardData = this.generateFeishuCardData(projectName, mrIid, mrDetails, analysis, aiAnalysis, filePath);
-      
+
       // 10. 保存飞书卡片数据
       this.logger.info('保存飞书卡片数据...');
       const feishuCardPath = await this.saveFeishuCardData(feishuCardData);
-      
+
       // 11. 发送飞书Webhook通知
       await this.sendFeishuWebhook(feishuCardData);
-      
+
       // 12. 生成访问URL
       const fileURL = this.generateFileURL(filePath);
       const jsonURL = this.generateFileURL(feishuCardPath);
-      
+
       // 记录成功统计
       const duration = Date.now() - startTime;
       this.reviewStats.successfulReviews++;
       this.updateReviewStats(duration);
-      
+
       this.logger.info(`Review完成！报告已保存到: ${filePath}`);
-      
+
       return {
         filePath,
         fileURL,
@@ -1978,18 +1825,18 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
         analysis,
         aiAnalysis
       };
-      
+
     } catch (error) {
       this.reviewStats.failedReviews++;
       this.logger.error('Review失败', error);
-      
+
       if (error.response) {
         this.logger.error('API响应详情', {
           status: error.response.status,
           statusText: error.response.statusText
         });
       }
-      
+
       throw error;
     } finally {
       // 清理全局变量
@@ -2008,17 +1855,17 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
       const ip = this.getLocalIP();
       const reportsDir = path.join(__dirname, 'reports');
       let relativePath = path.relative(reportsDir, filePath);
-      
+
       // 处理文件夹路径，确保以 / 结尾
       if (filePath.endsWith('/') || filePath.endsWith('\\')) {
         if (!relativePath.endsWith('/')) {
           relativePath += '/';
         }
       }
-      
+
       // 标准化路径分隔符为正斜杠
       relativePath = relativePath.replace(/\\/g, '/');
-      
+
       return `http://${ip}:${CONSTANTS.HTTP_SERVER_PORT}/reports/${relativePath}`;
     } catch (error) {
       this.logger.warn('生成URL失败', error);
@@ -2033,7 +1880,7 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
   getLocalIP() {
     try {
       const nets = networkInterfaces();
-      
+
       // 添加调试信息
       if (process.env.DEBUG || global.DEBUG_IP) {
         console.log('🔍 [DEBUG] 网络接口调试:');
@@ -2045,10 +1892,10 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
           }
         }
       }
-      
+
       // 优先级：以太网 > Wi-Fi > 其他
       const priorityOrder = ['以太网', 'Ethernet', 'en0', 'WiFi', 'Wi-Fi', 'wlan0'];
-      
+
       // 首先按优先级查找
       for (const priority of priorityOrder) {
         if (nets[priority]) {
@@ -2062,16 +1909,16 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
           }
         }
       }
-      
+
       // 如果优先级接口没有找到，遍历所有接口
       for (const name of Object.keys(nets)) {
         for (const net of nets[name]) {
           // 跳过内部地址和IPv6
           if (net.family === 'IPv4' && !net.internal) {
             // 优先选择私有网络地址
-            if (net.address.startsWith('192.168.') || 
-                net.address.startsWith('10.') || 
-                net.address.startsWith('172.')) {
+            if (net.address.startsWith('192.168.') ||
+              net.address.startsWith('10.') ||
+              net.address.startsWith('172.')) {
               if (process.env.DEBUG || global.DEBUG_IP) {
                 console.log(`🎯 [DEBUG] 选择私有网络IP: ${net.address} (接口: ${name})`);
               }
@@ -2080,7 +1927,7 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
           }
         }
       }
-      
+
       // 如果没有找到私有地址，返回第一个非内部IPv4地址
       for (const name of Object.keys(nets)) {
         for (const net of nets[name]) {
@@ -2092,7 +1939,7 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
           }
         }
       }
-      
+
       // 最后的回退选项
       if (process.env.DEBUG || global.DEBUG_IP) {
         console.log(`⚠️ [DEBUG] 使用回退IP: 127.0.0.1`);
@@ -2115,7 +1962,7 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
   updateReviewStats(duration) {
     const successfulReviews = this.reviewStats.successfulReviews;
     if (successfulReviews > 0) {
-      this.reviewStats.averageReviewTime = 
+      this.reviewStats.averageReviewTime =
         (this.reviewStats.averageReviewTime * (successfulReviews - 1) + duration) / successfulReviews;
     }
   }
@@ -2143,7 +1990,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
  */
 async function main() {
   const args = process.argv.slice(2);
-  
+
   if (args.length < 2) {
     console.log(`
 📋 PR自动化评审工具 v2.1.0
@@ -2178,11 +2025,13 @@ async function main() {
 
   // 加载配置
   const config = await loadConfig();
-  
-  // 创建评审器并执行review
+
+  // 创建评审器并等待AI初始化完成
   const reviewer = new PRReviewer(config);
+  await reviewer.waitForInitialization();
+
   const result = await reviewer.reviewPR(projectName, mrIid);
-  
+
   console.log(`
 ✅ PR评审完成！
 
@@ -2201,14 +2050,15 @@ async function listProjects() {
   try {
     const config = await loadConfig();
     const reviewer = new PRReviewer(config);
-    
+    // 注意：列出项目不需要AI，所以不需要等待AI初始化
+
     console.log('\n🔍 正在获取项目列表...\n');
-    
+
     // 显示配置文件中的项目
     if (config.projects && Object.keys(config.projects).length > 0) {
       console.log('📋 配置文件中的项目：');
       console.log(''.padEnd(80, '='));
-      
+
       for (const [name, project] of Object.entries(config.projects)) {
         console.log(`🏗️  ${name}`);
         console.log(`   ID: ${project.id}`);
@@ -2216,26 +2066,27 @@ async function listProjects() {
         console.log('');
       }
     }
-    
+
     // 从API获取所有项目
     console.log('🌐 从GitLab API获取的项目：');
     console.log(''.padEnd(80, '='));
-    
+
     // 直接获取项目列表，不使用缓存
     const projects = await reviewer.api.Projects.all({
       simple: true,
       per_page: 100,
       membership: true,
       archived: false,
-      sort: 'last_activity_desc'
+      order_by: 'last_activity_at',
+      sort: 'desc'
     });
-    
+
     console.log(`总计: ${projects.length} 个项目\n`);
-    
+
     // 分页显示项目
     const pageSize = 20;
     const displayProjects = projects.slice(0, pageSize);
-    
+
     for (const project of displayProjects) {
       const lastActivity = new Date(project.last_activity_at).toLocaleDateString('zh-CN');
       console.log(`🏗️  ${project.name}`);
@@ -2246,17 +2097,17 @@ async function listProjects() {
       console.log(`   URL: ${project.web_url}`);
       console.log('');
     }
-    
+
     if (projects.length > pageSize) {
       console.log(`显示前 ${pageSize} 个项目，总计 ${projects.length} 个项目`);
     }
-    
+
     console.log('\n💡 提示：您可以使用以下任一方式来引用项目：');
     console.log('   - 项目名称（如："ZM App"）');
-    console.log('   - 项目路径（如："zm-app"）');  
+    console.log('   - 项目路径（如："zm-app"）');
     console.log('   - 命名空间路径（如："dreame/zm-app"）');
     console.log('   - 项目ID（如："9831"）');
-    
+
   } catch (error) {
     console.error('❌ 获取项目列表失败:', error.message);
     process.exit(1);

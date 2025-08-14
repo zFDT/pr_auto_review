@@ -4,6 +4,26 @@
 
 ## 2025-08-14
 
+### 错误修复和配置优化
+
+**修复的问题：**
+1. **配置验证超时限制过严** - 将 AI 配置的 timeout 最大值从 120秒 提升至 600秒
+2. **缺少阿里云百炼验证逻辑** - 添加了 `validateAliyunBailian` 函数支持 aliyun_bailian 提供商
+3. **配置文件路径错误** - 修复健康检查中错误的配置文件路径（`./config.json` → `./config/config.json`）
+4. **移除不必要的环境变量文件检查** - 移除对 `.env.local`、`.env.development`、`.env.development.local` 等不存在文件的检查
+
+**修改的文件：**
+- `src/config/config-loader.js` - 完善AI配置验证规则，移除不必要的环境变量文件路径
+- `src/utils/validate-config.js` - 添加阿里云百炼配置验证功能
+- `src/utils/health-check.js` - 修复配置文件路径
+- `config/config.json` - 恢复600秒超时设置
+
+**优化效果：**
+- ✅ 配置验证完全通过，无多余警告信息
+- ✅ 健康检查状态：HEALTHY
+- ✅ 所有AI提供商配置正确识别
+- ✅ 简化了配置加载流程，只检查必要的 `.env` 文件
+
 ### Git 提交恢复
 
 - 恢复了之前在切换分支时丢失的重要提交：
