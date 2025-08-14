@@ -25,7 +25,7 @@ class CopilotAnalyzer {
     this.config = config || {};
     this.enabled = this.checkCopilotAvailability();
     this.flutterConfig = null;
-    
+
     // 加载Flutter专用配置
     this.loadSpecializedConfig().catch(err => {
       console.warn('⚠️ 加载Flutter配置失败:', err.message);
@@ -37,43 +37,33 @@ class CopilotAnalyzer {
    */
   async loadSpecializedConfig() {
     try {
-      // 优先使用新的统一配置文件
+      // 使用统一配置文件
       const unifiedConfigPath = path.join(process.cwd(), 'config', 'unified-flutter-review-config.json');
-      const legacyConfigPath = path.join(process.cwd(), 'config', 'flutter-review-config.json');
-      
-      let configPath = unifiedConfigPath;
-      
+
       // 检查统一配置文件是否存在
       try {
         await fs.access(unifiedConfigPath);
         console.log('✅ 使用统一Flutter配置文件');
       } catch {
-        // 如果统一配置不存在，尝试使用旧配置
-        try {
-          await fs.access(legacyConfigPath);
-          configPath = legacyConfigPath;
-          console.log('⚠️  使用旧的Flutter配置文件，建议迁移到unified-flutter-review-config.json');
-        } catch {
-          throw new Error('未找到Flutter配置文件');
-        }
+        throw new Error('未找到Flutter配置文件');
       }
-      
-      const configContent = await fs.readFile(configPath, 'utf8');
+
+      const configContent = await fs.readFile(unifiedConfigPath, 'utf8');
       const parsedConfig = JSON.parse(configContent);
-      
+
       // 根据配置文件格式进行适配
       if (parsedConfig.unified_flutter_review_config) {
-        // 新的统一配置格式
+        // 统一配置格式
         this.flutterConfig = this.adaptUnifiedConfig(parsedConfig.unified_flutter_review_config);
       } else {
-        // 旧的配置格式
+        // 兼容旧格式
         this.flutterConfig = parsedConfig;
       }
-      
+
       console.log('✅ 加载Flutter专用配置成功');
     } catch (error) {
       // 使用默认配置
-      this.flutterConfig = { 
+      this.flutterConfig = {
         review_focus: "Flutter/Dart 项目优化，同时支持多种编程语言"
       };
       console.log('⚠️ 使用默认配置:', error.message);
@@ -89,7 +79,7 @@ class CopilotAnalyzer {
       review_areas: unifiedConfig.review_focus_areas || {},
       ai_analysis_config: unifiedConfig.ai_analysis_config || {}
     };
-    
+
     return adapted;
   }
 
@@ -101,10 +91,10 @@ class CopilotAnalyzer {
       // 检查VS Code是否可用
       accessSync('/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code', constants.F_OK);
       this.vscodeAvailable = true;
-      
+
       // 假设Copilot已安装（实际使用中可以通过更复杂的检测）
       this.copilotAvailable = true;
-      
+
       return true;
     } catch (error) {
       this.failureReasons.push('VS Code不可用');
@@ -135,9 +125,9 @@ class CopilotAnalyzer {
   async performCopilotAnalysis(diff, mrDetails) {
     // 模拟Copilot分析过程
     // 实际实现中需要与VS Code Copilot API交互
-    
+
     const prompt = this.buildAnalysisPrompt(diff, mrDetails);
-    
+
     // 这里应该调用实际的Copilot API
     // 目前返回模拟结果
     return {
@@ -152,7 +142,7 @@ class CopilotAnalyzer {
    */
   buildAnalysisPrompt(diff, mrDetails) {
     const focusAreas = this.flutterConfig?.review_focus || '代码质量分析';
-    
+
     return `
 请分析以下代码变更：
 
@@ -229,10 +219,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   async function testCopilotAnalyzer() {
     try {
       console.log('🧪 Copilot分析器测试\n');
-      
+
       const analyzer = new CopilotAnalyzer();
       console.log('状态:', analyzer.getStatus());
-      
+
       const testDiff = `
 diff --git a/test.dart b/test.dart
 +++ b/test.dart
@@ -243,19 +233,19 @@ diff --git a/test.dart b/test.dart
    runApp(MyApp());
  }
       `;
-      
+
       const result = await analyzer.analyzeChanges(testDiff, {
         title: '测试变更',
         description: '添加测试代码'
       });
-      
+
       console.log('\n📊 分析结果:');
       console.log(JSON.stringify(result, null, 2));
-      
+
     } catch (error) {
       console.error('❌ 测试失败:', error);
     }
   }
-  
+
   testCopilotAnalyzer();
 }

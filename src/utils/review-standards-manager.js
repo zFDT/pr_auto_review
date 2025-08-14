@@ -15,42 +15,35 @@ class ReviewStandardsManager {
     // 从当前工作目录查找配置文件
     this.configDir = process.cwd() + '/config';
     this.unifiedConfigPath = this.configDir + '/unified-flutter-review-config.json';
-    this.standardsConfigPath = this.configDir + '/review-standards-config.json';
     this.mainConfigPath = this.configDir + '/config.json';
-    this.flutterConfigPath = this.configDir + '/flutter-review-config.json';
-    
+
     this.loadStandards();
   }
-  
+
   /**
    * 加载review标准配置
-   * 优先使用新的统一配置文件，如果不存在则使用旧的配置文件
+   * 使用统一配置文件
    */
   loadStandards() {
     try {
-      // 优先使用新的统一配置文件
+      // 检查统一配置文件是否存在
       if (existsSync(this.unifiedConfigPath)) {
         const content = readFileSync(this.unifiedConfigPath, 'utf-8');
         const unifiedConfig = JSON.parse(content);
-        
+
         // 将统一配置转换为旧的格式以保持兼容性
         this.standards = this.convertUnifiedConfigToLegacyFormat(unifiedConfig);
         console.log('✅ 使用统一Flutter评审配置文件');
-        
-      } else if (existsSync(this.standardsConfigPath)) {
-        const content = readFileSync(this.standardsConfigPath, 'utf-8');
-        this.standards = JSON.parse(content);
-        console.log('⚠️  使用旧的review标准配置文件，建议迁移到unified-flutter-review-config.json');
-        
+
       } else {
-        throw new Error('未找到review配置文件 (unified-flutter-review-config.json 或 review-standards-config.json)');
+        throw new Error('未找到review配置文件 (unified-flutter-review-config.json)');
       }
     } catch (error) {
       console.error('❌ 加载review标准配置失败:', error.message);
       throw error;
     }
   }
-  
+
   /**
    * 将新的统一配置格式转换为旧的格式以保持兼容性
    * @param {Object} unifiedConfig - 统一配置
@@ -58,22 +51,22 @@ class ReviewStandardsManager {
    */
   convertUnifiedConfigToLegacyFormat(unifiedConfig) {
     const config = unifiedConfig.unified_flutter_review_config;
-    
+
     return {
       global_review_standards: {
         description: config.description || "Flutter项目代码审查标准配置",
         version: config.version || "3.0.0",
         last_updated: config.last_updated,
-        
+
         system_prompts: config.ai_analysis_config?.system_prompts || {
           base_system_prompt: "你是一个专精Flutter开发的代码审查专家。"
         },
-        
+
         analysis_focus_areas: this.convertReviewFocusAreasToLegacyFormat(config.review_focus_areas || {}),
-        
+
         output_format_requirements: config.ai_analysis_config?.output_format_requirements || {}
       },
-      
+
       language_specific_standards: {
         flutter_dart: {
           enabled: true,
@@ -83,7 +76,7 @@ class ReviewStandardsManager {
       }
     };
   }
-  
+
   /**
    * 转换评审焦点区域格式
    * @param {Object} reviewFocusAreas - 新格式的评审焦点区域
@@ -91,7 +84,7 @@ class ReviewStandardsManager {
    */
   convertReviewFocusAreasToLegacyFormat(reviewFocusAreas) {
     const converted = {};
-    
+
     for (const [key, area] of Object.entries(reviewFocusAreas)) {
       if (area.enabled) {
         converted[key] = {
@@ -101,10 +94,10 @@ class ReviewStandardsManager {
         };
       }
     }
-    
+
     return converted;
   }
-  
+
   /**
    * 从区域配置中提取检查项
    * @param {Object} area - 区域配置
@@ -112,7 +105,7 @@ class ReviewStandardsManager {
    */
   extractItemsFromArea(area) {
     const items = [];
-    
+
     if (area.checks) {
       for (const [checkKey, check] of Object.entries(area.checks)) {
         if (check.rules && Array.isArray(check.rules)) {
@@ -129,10 +122,10 @@ class ReviewStandardsManager {
         }
       }
     }
-    
+
     return items.length > 0 ? items : [area.description || `${area.weight || 20}权重的检查项`];
   }
-  
+
   /**
    * 获取指定语言的review标准
    * @param {string} language - 编程语言
@@ -142,16 +135,16 @@ class ReviewStandardsManager {
     const langKey = this.normalizeLanguageKey(language);
     const globalStandards = this.standards.global_review_standards;
     const languageSpecific = this.standards.language_specific_standards[langKey];
-    
+
     if (!languageSpecific) {
       console.log(`⚠️ 未找到${language}的特定标准，使用全局标准`);
       return globalStandards;
     }
-    
+
     // 合并全局标准和语言特定标准
     return this.mergeStandards(globalStandards, languageSpecific);
   }
-  
+
   /**
    * 获取项目类型的review标准
    * @param {string} projectType - 项目类型
@@ -160,18 +153,18 @@ class ReviewStandardsManager {
   getProjectTypeStandards(projectType) {
     const projectStandards = this.standards.project_type_standards[projectType];
     const globalStandards = this.standards.global_review_standards;
-    
+
     if (!projectStandards) {
       console.log(`⚠️ 未找到${projectType}的特定标准，使用全局标准`);
       return globalStandards;
     }
-    
+
     return {
       ...globalStandards,
       project_focus: projectStandards.focus_areas
     };
   }
-  
+
   /**
    * 获取系统提示词
    * @param {string} language - 编程语言
@@ -182,20 +175,20 @@ class ReviewStandardsManager {
     const globalPrompts = this.standards.global_review_standards.system_prompts;
     const analysisAreas = this.standards.global_review_standards.analysis_focus_areas;
     const outputFormat = this.standards.global_review_standards.output_format_requirements;
-    
+
     let systemPrompt = globalPrompts.base_system_prompt + '\n\n';
-    
+
     // 添加角色定义
     systemPrompt += '🎯 **核心职责：**\n';
     globalPrompts.role_definition.responsibilities.forEach(resp => {
       systemPrompt += `- ${resp}\n`;
     });
-    
+
     systemPrompt += '\n💡 **分析原则：**\n';
     globalPrompts.analysis_principles.forEach(principle => {
       systemPrompt += `- ${principle}\n`;
     });
-    
+
     // 添加分析重点
     systemPrompt += '\n📋 **分析重点领域：**\n';
     Object.entries(analysisAreas).forEach(([area, config]) => {
@@ -206,7 +199,7 @@ class ReviewStandardsManager {
         });
       }
     });
-    
+
     // 添加语言特定要求
     if (language) {
       const langStandards = this.getLanguageStandards(language);
@@ -217,7 +210,7 @@ class ReviewStandardsManager {
         });
       }
     }
-    
+
     // 添加项目类型要求
     if (projectType) {
       const projectStandards = this.getProjectTypeStandards(projectType);
@@ -228,7 +221,7 @@ class ReviewStandardsManager {
         });
       }
     }
-    
+
     // 添加输出格式要求
     systemPrompt += '\n📤 **输出要求：**\n';
     systemPrompt += `- 使用${outputFormat.language === 'chinese' ? '中文' : '英文'}回复\n`;
@@ -237,18 +230,18 @@ class ReviewStandardsManager {
     if (outputFormat.include_examples) {
       systemPrompt += '- 提供具体的代码示例和修改建议\n';
     }
-    
+
     // 添加质量评分标准
     systemPrompt += '\n⭐ **质量评分标准 (1-10分)：**\n';
     Object.entries(outputFormat.quality_scoring.criteria).forEach(([score, desc]) => {
       systemPrompt += `- ${score}分: ${desc}\n`;
     });
-    
+
     systemPrompt += '\n请用专业、简洁的中文回复，避免冗长的理论阐述，专注于实际可执行的建议。';
-    
+
     return systemPrompt;
   }
-  
+
   /**
    * 获取AI提供商特定配置
    * @param {string} provider - AI提供商名称
@@ -257,7 +250,7 @@ class ReviewStandardsManager {
   getAIProviderConfig(provider) {
     return this.standards.ai_provider_specific_config[provider] || {};
   }
-  
+
   /**
    * 获取严重程度分类配置
    * @returns {Object} 严重程度配置
@@ -265,7 +258,7 @@ class ReviewStandardsManager {
   getSeverityClassification() {
     return this.standards.severity_classification;
   }
-  
+
   /**
    * 获取团队自定义规则
    * @returns {Object} 团队自定义配置
@@ -273,7 +266,7 @@ class ReviewStandardsManager {
   getTeamCustomization() {
     return this.standards.team_customization;
   }
-  
+
   /**
    * 更新review标准配置
    * @param {Object} updates - 要更新的配置
@@ -282,7 +275,7 @@ class ReviewStandardsManager {
     this.standards = { ...this.standards, ...updates };
     this.saveStandards();
   }
-  
+
   /**
    * 保存review标准配置
    */
@@ -295,7 +288,7 @@ class ReviewStandardsManager {
       throw error;
     }
   }
-  
+
   /**
    * 生成配置诊断报告
    * @returns {Object} 诊断报告
@@ -307,21 +300,21 @@ class ReviewStandardsManager {
       suggestions: [],
       statistics: {}
     };
-    
+
     // 检查配置完整性
     const requiredSections = [
       'global_review_standards',
-      'language_specific_standards', 
+      'language_specific_standards',
       'ai_provider_specific_config'
     ];
-    
+
     requiredSections.forEach(section => {
       if (!this.standards[section]) {
         report.warnings.push(`缺少必要配置段: ${section}`);
         report.config_status = 'WARNING';
       }
     });
-    
+
     // 统计信息
     report.statistics = {
       supported_languages: Object.keys(this.standards.language_specific_standards || {}).length,
@@ -329,19 +322,19 @@ class ReviewStandardsManager {
       ai_providers: Object.keys(this.standards.ai_provider_specific_config || {}).length,
       custom_rules: (this.standards.team_customization?.custom_rules?.rules || []).length
     };
-    
+
     // 生成建议
     if (report.statistics.supported_languages < 3) {
       report.suggestions.push('建议添加更多编程语言的支持');
     }
-    
+
     if (report.statistics.custom_rules === 0) {
       report.suggestions.push('建议根据团队需求添加自定义规则');
     }
-    
+
     return report;
   }
-  
+
   /**
    * 合并标准配置
    * @private
@@ -356,7 +349,7 @@ class ReviewStandardsManager {
       }
     };
   }
-  
+
   /**
    * 标准化语言键
    * @private
@@ -372,10 +365,10 @@ class ReviewStandardsManager {
       'py': 'python',
       'java': 'java'
     };
-    
+
     return languageMap[language.toLowerCase()] || language.toLowerCase();
   }
-  
+
   /**
    * 翻译分析领域名称
    * @private
@@ -389,10 +382,10 @@ class ReviewStandardsManager {
       'maintainability': '可维护性',
       'architecture_design': '架构设计'
     };
-    
+
     return translations[area] || area;
   }
-  
+
   /**
    * 验证配置格式
    * @returns {boolean} 配置是否有效
@@ -405,21 +398,21 @@ class ReviewStandardsManager {
         'language_specific_standards',
         'ai_provider_specific_config'
       ];
-      
+
       for (const section of requiredSections) {
         if (!this.standards[section]) {
           console.error(`❌ 缺少必要配置段: ${section}`);
           return false;
         }
       }
-      
+
       // 验证全局标准
       const globalStandards = this.standards.global_review_standards;
       if (!globalStandards.system_prompts || !globalStandards.analysis_focus_areas) {
         console.error('❌ 全局标准配置不完整');
         return false;
       }
-      
+
       console.log('✅ Review标准配置验证通过');
       return true;
     } catch (error) {

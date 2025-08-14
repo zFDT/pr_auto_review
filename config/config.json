@@ -79,12 +79,12 @@
       "model": "qwen-max",
       "workspace_id": "your_aliyun_workspace_id",
       "base_url": "https://dashscope.aliyuncs.com/api/v1",
-      "timeout": 600000,
+      "timeout": 120000,
       "maxTokens": 8192,
       "temperature": 0.1,
       "maxConcurrency": 10,
-      "maxRetries": 2,
-      "retryDelay": 500,
+      "maxRetries": 3,
+      "retryDelay": 1000,
       "enableCache": false
     }
   },

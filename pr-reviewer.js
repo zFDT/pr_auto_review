@@ -238,7 +238,24 @@ class AIAnalyzer {
       const duration = Date.now() - startTime;
       this.updateAnalysisStats(duration, true);
 
+      // 显示分析结果和Token使用统计
       this.logger.info(`✅ AI分析完成，耗时: ${duration}ms`);
+
+      // 输出token使用统计（如果可用）
+      if (analysisResult && analysisResult.token_usage) {
+        const tokenUsage = analysisResult.token_usage;
+        if (tokenUsage.session) {
+          this.logger.info(`📊 本次Token使用统计:`);
+          this.logger.info(`  📝 输入Token: ${tokenUsage.session.inputTokens?.toLocaleString() || 'N/A'}`);
+          this.logger.info(`  💬 输出Token: ${tokenUsage.session.outputTokens?.toLocaleString() || 'N/A'}`);
+          this.logger.info(`  📋 总计Token: ${tokenUsage.session.totalTokens?.toLocaleString() || 'N/A'}`);
+          this.logger.info(`  🔄 请求次数: ${tokenUsage.session.requests || 'N/A'}`);
+        }
+        if (tokenUsage.cumulative) {
+          this.logger.info(`📈 累计Token使用: ${tokenUsage.cumulative.totalTokens?.toLocaleString() || 'N/A'}`);
+        }
+      }
+
       return analysisResult;
 
     } catch (error) {
@@ -661,58 +678,7 @@ class PRReviewer {
     });
   }
 
-  /**
-   * 获取MR的评论
-   * 包括讨论评论和代码行评论
-   * 
-   * @param {number} projectId - 项目ID
-   * @param {number} mrIid - MR内部ID
-   * @returns {Promise<Object>} 评论对象，包含讨论评论和差异评论
-   */
-  async getMRComments(projectId, mrIid) {
-    try {
-      this.logger.info(`获取评论: 项目${projectId}, MR#${mrIid}`);
 
-      // 获取讨论评论
-      const discussions = await this.api.MergeRequestDiscussions.all(projectId, mrIid);
-
-      const discussionNotes = [];
-      const diffNotes = [];
-
-      discussions.forEach(discussion => {
-        discussion.notes.forEach(note => {
-          const noteData = {
-            id: note.id,
-            body: note.body,
-            author_name: note.author.name,
-            created_at: note.created_at,
-            updated_at: note.updated_at
-          };
-
-          if (note.position) {
-            // 这是代码行评论
-            noteData.position = note.position;
-            diffNotes.push(noteData);
-          } else {
-            // 这是普通讨论评论
-            discussionNotes.push(noteData);
-          }
-        });
-      });
-
-      this.logger.info(`评论获取成功: ${discussionNotes.length}条讨论, ${diffNotes.length}条代码评论`);
-
-      return {
-        discussionNotes,
-        diffNotes,
-        length: discussionNotes.length + diffNotes.length
-      };
-
-    } catch (error) {
-      this.logger.error('获取评论失败', error);
-      throw new Error(`获取评论失败: ${error.message}`);
-    }
-  }
 
   /**
    * 分析代码变更
@@ -879,12 +845,11 @@ class PRReviewer {
    * @param {number} mrIid - MR编号
    * @param {Object} mrDetails - MR详细信息
    * @param {Array} diff - 代码差异
-   * @param {Object} comments - 评论信息
    * @param {Object} analysis - 代码分析结果
    * @param {Object|null} aiAnalysis - AI分析结果
    * @returns {string} Markdown格式的报告
    */
-  generateReviewReport(projectName, mrIid, mrDetails, diff, comments, analysis, aiAnalysis = null) {
+  generateReviewReport(projectName, mrIid, mrDetails, diff, analysis, aiAnalysis = null) {
     const timestamp = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
 
     // 计算统计信息
@@ -897,7 +862,7 @@ class PRReviewer {
     let report = this.generateReportHeader(projectName, mrIid, mrDetails, timestamp);
 
     // 生成变更统计
-    report += this.generateChangeStatistics(fileCount, additionCount, deletionCount, netChange, comments.length);
+    report += this.generateChangeStatistics(fileCount, additionCount, deletionCount, netChange);
 
     // 生成PR描述
     report += this.generatePRDescription(mrDetails);
@@ -907,9 +872,6 @@ class PRReviewer {
 
     // 生成潜在问题检测
     report += this.generatePotentialIssues(analysis);
-
-    // 生成现有评论汇总
-    report += this.generateCommentsSection(comments);
 
     // 生成AI分析结果
     if (aiAnalysis) {
@@ -983,7 +945,7 @@ class PRReviewer {
    * 生成变更统计
    * @private
    */
-  generateChangeStatistics(fileCount, additionCount, deletionCount, netChange, commentCount) {
+  generateChangeStatistics(fileCount, additionCount, deletionCount, netChange) {
     return `## 📈 变更统计
 
 | 指标 | 数量 | 评估 |
@@ -992,7 +954,6 @@ class PRReviewer {
 | **新增行数** | +${additionCount} | ${this.getAdditionStatus(additionCount)} |
 | **删除行数** | -${deletionCount} | ${this.getDeletionStatus(deletionCount)} |
 | **净变更** | ${netChange > 0 ? '+' : ''}${netChange} | ${this.getNetChangeStatus(netChange)} |
-| **评论数量** | ${commentCount} | ${this.getCommentStatus(commentCount)} |
 
 `;
   }
@@ -1065,42 +1026,11 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
   }
 
   /**
-   * 生成评论汇总
+   * 生成评论汇总 - 功能已移除
    * @private
    */
-  generateCommentsSection(comments) {
-    if (comments.discussionNotes.length > 0 || comments.diffNotes.length > 0) {
-      let section = `## 💬 现有评论\n\n`;
-
-      if (comments.discussionNotes.length > 0) {
-        section += `### 一般评论 (${comments.discussionNotes.length} 条)\n`;
-        comments.discussionNotes.slice(0, 5).forEach(note => {
-          section += `- **${note.author_name}** (${new Date(note.created_at).toLocaleString('zh-CN')}): ${note.body.substring(0, 200)}${note.body.length > 200 ? '...' : ''}\n`;
-        });
-        if (comments.discussionNotes.length > 5) {
-          section += `- _... 还有 ${comments.discussionNotes.length - 5} 条评论_\n`;
-        }
-        section += '\n';
-      }
-
-      if (comments.diffNotes.length > 0) {
-        section += `### 代码评论 (${comments.diffNotes.length} 条)\n`;
-        comments.diffNotes.slice(0, 5).forEach(note => {
-          section += `- **${note.author_name}** (${new Date(note.created_at).toLocaleString('zh-CN')}): ${note.body.substring(0, 200)}${note.body.length > 200 ? '...' : ''}\n`;
-          if (note.position) {
-            section += `  📍 位置: ${note.position.new_path}:${note.position.new_line}\n`;
-          }
-        });
-        if (comments.diffNotes.length > 5) {
-          section += `- _... 还有 ${comments.diffNotes.length - 5} 条代码评论_\n`;
-        }
-        section += '\n';
-      }
-
-      return section;
-    }
-
-    return `## 💬 现有评论\n\n暂无评论。\n\n`;
+  generateCommentsSection() {
+    return '';
   }
 
   /**
@@ -1110,6 +1040,14 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
   generateAIAnalysisSection(aiAnalysis) {
     let section = `## 🤖 AI智能分析\n\n`;
 
+    // 优先使用AI返回的原始内容（更丰富）
+    if (aiAnalysis.content) {
+      // 如果AI返回了格式化的内容，直接使用
+      section += aiAnalysis.content + '\n\n';
+      return section;
+    }
+
+    // 如果AI有结构化数据，处理结构化输出
     if (aiAnalysis.quality_score !== null && aiAnalysis.quality_score !== undefined) {
       const scoreEmoji = this.getQualityScoreEmoji(aiAnalysis.quality_score);
       section += `### 代码质量评分: ${scoreEmoji} ${aiAnalysis.quality_score}/10\n\n`;
@@ -1121,13 +1059,21 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
 
     if (aiAnalysis.potential_issues && aiAnalysis.potential_issues.length > 0) {
       section += `### 🐛 潜在问题\n`;
-      aiAnalysis.potential_issues.forEach(issue => section += `- ${issue}\n`);
+      if (Array.isArray(aiAnalysis.potential_issues)) {
+        aiAnalysis.potential_issues.forEach(issue => section += `- ${issue}\n`);
+      } else {
+        section += `${aiAnalysis.potential_issues}\n`;
+      }
       section += '\n';
     }
 
-    if (aiAnalysis.security_concerns && aiAnalysis.security_concerns.length > 0) {
+    if (aiAnalysis.security_concerns) {
       section += `### 🔒 安全性考虑\n`;
-      aiAnalysis.security_concerns.forEach(concern => section += `- ${concern}\n`);
+      if (Array.isArray(aiAnalysis.security_concerns)) {
+        aiAnalysis.security_concerns.forEach(concern => section += `- ${concern}\n`);
+      } else {
+        section += `${aiAnalysis.security_concerns}\n`;
+      }
       section += '\n';
     }
 
@@ -1308,13 +1254,6 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
     return '🟢 正常范围';
   }
 
-  getCommentStatus(count) {
-    if (count > 20) return '🟡 讨论激烈';
-    if (count > 10) return '🟡 讨论较多';
-    if (count > 0) return '🟢 有讨论';
-    return '⚪ 无评论';
-  }
-
   getComplexityEmoji(complexity) {
     const emojiMap = {
       'very-low': '🟢',
@@ -1398,28 +1337,44 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
     let aiSummary = '';
     let mainIssues = [];
     let mainSuggestions = [];
+    let aiStatus = 'disabled';
+    let aiErrorMessage = '';
 
     if (aiAnalysis) {
-      // 处理不同AI分析器返回的数据结构
-      let actualAnalysisData = aiAnalysis;
+      aiStatus = aiAnalysis.status || 'unknown';
 
-      // 如果是嵌套结构，提取analysis字段
-      if (aiAnalysis.analysis && typeof aiAnalysis.analysis === 'object') {
-        actualAnalysisData = aiAnalysis.analysis;
-      }
+      // 检查AI分析是否失败
+      if (aiStatus === 'failed' || aiStatus === 'skipped') {
+        aiErrorMessage = aiAnalysis.error || '未知错误';
+        aiSummary = `AI分析${aiStatus === 'failed' ? '失败' : '跳过'}: ${aiErrorMessage}`;
+        qualityColor = '🔴';
+      } else if (aiAnalysis.analysis) {
+        // 处理不同AI分析器返回的数据结构
+        let actualAnalysisData = aiAnalysis.analysis;
 
-      qualityScore = actualAnalysisData.quality_score;
-      if (qualityScore !== null) {
-        qualityColor = qualityScore >= 8 ? '🟢' : qualityScore >= 6 ? '🟡' : '🔴';
-      }
-      aiSummary = actualAnalysisData.summary || '';
+        // 如果是嵌套结构，提取analysis字段
+        if (aiAnalysis.analysis && typeof aiAnalysis.analysis === 'object') {
+          actualAnalysisData = aiAnalysis.analysis;
+        }
 
-      // 提取主要问题（限制数量）
-      if (actualAnalysisData.potential_issues && actualAnalysisData.potential_issues.length > 0) {
-        mainIssues = actualAnalysisData.potential_issues.slice(0, 3);
-      }
-      if (actualAnalysisData.improvement_suggestions && actualAnalysisData.improvement_suggestions.length > 0) {
-        mainSuggestions = actualAnalysisData.improvement_suggestions.slice(0, 3);
+        qualityScore = actualAnalysisData.quality_score;
+        if (qualityScore !== null) {
+          qualityColor = qualityScore >= 8 ? '🟢' : qualityScore >= 6 ? '🟡' : '🔴';
+        }
+        aiSummary = actualAnalysisData.summary || '';
+
+        // 提取主要问题（限制数量）
+        if (actualAnalysisData.potential_issues && actualAnalysisData.potential_issues.length > 0) {
+          mainIssues = actualAnalysisData.potential_issues.slice(0, 3);
+        }
+        if (actualAnalysisData.improvement_suggestions && actualAnalysisData.improvement_suggestions.length > 0) {
+          mainSuggestions = actualAnalysisData.improvement_suggestions.slice(0, 3);
+        }
+        aiStatus = 'success';
+      } else {
+        aiSummary = 'AI分析未返回有效结果';
+        aiStatus = 'no_result';
+        qualityColor = '🟡';
       }
     }
 
@@ -1432,7 +1387,10 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
           enable_forward: true
         },
         header: {
-          template: qualityScore >= 8 ? "green" : qualityScore >= 6 ? "yellow" : qualityScore >= 1 ? "red" : "blue",
+          template: aiStatus === 'failed' ? "red" :
+            aiStatus === 'success' && qualityScore >= 8 ? "green" :
+              aiStatus === 'success' && qualityScore >= 6 ? "yellow" :
+                aiStatus === 'success' && qualityScore >= 1 ? "red" : "blue",
           title: {
             content: `📋 ${projectName} - PR #${mrIid} 评审完成`,
             tag: "plain_text"
@@ -1473,11 +1431,35 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
     };
 
     // 添加AI评分部分
-    if (qualityScore !== null) {
+    if (aiStatus === 'failed' || aiStatus === 'skipped') {
+      cardData.card.elements.push({
+        tag: "div",
+        text: {
+          content: `**🤖 AI分析状态**: 🔴 ${aiStatus === 'failed' ? '失败' : '跳过'}\n**❗ 原因**: ${aiErrorMessage}`,
+          tag: "lark_md"
+        }
+      });
+    } else if (aiStatus === 'no_result') {
+      cardData.card.elements.push({
+        tag: "div",
+        text: {
+          content: `**🤖 AI分析状态**: 🟡 无有效结果\n**📋 说明**: AI分析未返回可用的评估数据`,
+          tag: "lark_md"
+        }
+      });
+    } else if (qualityScore !== null) {
       cardData.card.elements.push({
         tag: "div",
         text: {
           content: `**🤖 AI评分**: ${qualityColor} ${qualityScore}/10`,
+          tag: "lark_md"
+        }
+      });
+    } else if (aiStatus === 'disabled') {
+      cardData.card.elements.push({
+        tag: "div",
+        text: {
+          content: `**🤖 AI分析**: ⚪ 未启用`,
           tag: "lark_md"
         }
       });
@@ -1745,10 +1727,7 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
       const diff = await this.getMRDiff(projectId, mrIid);
       this.logger.info(`变更文件数: ${diff.length}`);
 
-      // 4. 获取评论
-      this.logger.info('获取评论...');
-      const comments = await this.getMRComments(projectId, mrIid);
-      this.logger.info(`评论数: ${comments.length}`);
+      // 4. 获取评论 - 已移除评论功能
 
       // 5. 分析代码变更
       this.logger.info('分析代码变更...');
@@ -1764,7 +1743,7 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
             this.logger.info('AI分析器未初始化，正在初始化...');
             await this.initializeAI();
           }
-          
+
           if (this.aiAnalyzer) {
             aiAnalysis = await this.aiAnalyzer.analyzeCodeChanges(diff, mrDetails);
             if (aiAnalysis) {
@@ -1777,18 +1756,39 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
               });
             } else {
               this.logger.info('AI分析跳过');
+              // 创建AI分析跳过的状态对象
+              aiAnalysis = {
+                status: 'skipped',
+                provider: 'unknown',
+                error: 'AI分析被跳过',
+                analysis: null
+              };
             }
           } else {
             this.logger.warn('AI分析器初始化失败，跳过AI分析');
+            // 创建AI初始化失败的状态对象
+            aiAnalysis = {
+              status: 'failed',
+              provider: 'unknown',
+              error: 'AI分析器初始化失败',
+              analysis: null
+            };
           }
         } catch (aiError) {
           this.logger.warn('AI分析失败', aiError);
+          // 创建AI分析失败的状态对象
+          aiAnalysis = {
+            status: 'failed',
+            provider: this.aiAnalyzer ? this.aiAnalyzer.constructor.name : 'unknown',
+            error: aiError.message || 'AI分析过程中发生错误',
+            analysis: null
+          };
         }
       }
 
       // 7. 生成报告
       this.logger.info('生成review报告...');
-      const report = this.generateReviewReport(projectName, mrIid, mrDetails, diff, comments, analysis, aiAnalysis);
+      const report = this.generateReviewReport(projectName, mrIid, mrDetails, diff, analysis, aiAnalysis);
 
       // 8. 保存报告
       this.logger.info('保存报告...');

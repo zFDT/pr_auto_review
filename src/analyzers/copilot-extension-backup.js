@@ -25,7 +25,7 @@ class CopilotAnalyzer {
     this.config = config || {};
     this.enabled = this.checkCopilotAvailability();
     this.flutterConfig = null;
-    
+
     // 加载Flutter专用配置
     this.loadSpecializedConfig().catch(err => {
       console.warn('⚠️ 加载Flutter配置失败:', err.message);
@@ -37,43 +37,33 @@ class CopilotAnalyzer {
    */
   async loadSpecializedConfig() {
     try {
-      // 优先使用新的统一配置文件
+      // 使用统一配置文件
       const unifiedConfigPath = path.join(process.cwd(), 'config', 'unified-flutter-review-config.json');
-      const legacyConfigPath = path.join(process.cwd(), 'config', 'flutter-review-config.json');
-      
-      let configPath = unifiedConfigPath;
-      
+
       // 检查统一配置文件是否存在
       try {
         await fs.access(unifiedConfigPath);
         console.log('✅ 使用统一Flutter配置文件');
       } catch {
-        // 如果统一配置不存在，尝试使用旧配置
-        try {
-          await fs.access(legacyConfigPath);
-          configPath = legacyConfigPath;
-          console.log('⚠️  使用旧的Flutter配置文件，建议迁移到unified-flutter-review-config.json');
-        } catch {
-          throw new Error('未找到Flutter配置文件');
-        }
+        throw new Error('未找到Flutter配置文件');
       }
-      
-      const configContent = await fs.readFile(configPath, 'utf8');
+
+      const configContent = await fs.readFile(unifiedConfigPath, 'utf8');
       const parsedConfig = JSON.parse(configContent);
-      
+
       // 根据配置文件格式进行适配
       if (parsedConfig.unified_flutter_review_config) {
-        // 新的统一配置格式
+        // 统一配置格式
         this.flutterConfig = this.adaptUnifiedConfig(parsedConfig.unified_flutter_review_config);
       } else {
-        // 旧的配置格式
+        // 兼容旧格式
         this.flutterConfig = parsedConfig;
       }
-      
+
       console.log('✅ 加载Flutter专用配置成功');
     } catch (error) {
       // 使用默认配置
-      this.flutterConfig = { 
+      this.flutterConfig = {
         review_focus: "Flutter/Dart 项目优化，同时支持多种编程语言"
       };
       console.log('⚠️ 使用默认配置:', error.message);
@@ -87,10 +77,10 @@ class CopilotAnalyzer {
     this.vscodeAvailable = false;
     this.failureReasons = [];
     this.flutterConfig = null;
-    
+
     // 设置VS Code的绝对路径
     this.vscodeCommand = this.getVSCodeCommand();
-    
+
     // 加载专用配置
     this.loadSpecializedConfig();
   }
@@ -110,7 +100,7 @@ class CopilotAnalyzer {
         console.warn('⚠️ 配置的VS Code路径无效，使用默认路径');
       }
     }
-    
+
     // macOS标准安装路径
     const macPath = '/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code';
     // 备用路径
@@ -148,35 +138,23 @@ class CopilotAnalyzer {
    */
   async loadSpecializedConfig() {
     try {
-      // 优先使用新的统一配置文件
+      // 使用统一配置文件
       const unifiedConfigPath = path.join(process.cwd(), 'config', 'unified-flutter-review-config.json');
-      const legacyConfigPath = path.join(process.cwd(), 'config', 'flutter-review-config.json');
-      
-      let configPath = unifiedConfigPath;
-      let useUnifiedFormat = true;
-      
+
       // 检查统一配置文件是否存在
       try {
         await fs.access(unifiedConfigPath);
         console.log('✅ 使用统一Flutter配置文件');
       } catch {
-        // 如果统一配置不存在，尝试使用旧配置
-        try {
-          await fs.access(legacyConfigPath);
-          configPath = legacyConfigPath;
-          useUnifiedFormat = false;
-          console.log('⚠️  使用旧的Flutter配置文件，建议迁移到unified-flutter-review-config.json');
-        } catch {
-          throw new Error('未找到Flutter配置文件');
-        }
+        throw new Error('未找到Flutter配置文件');
       }
-      
-      const configContent = await fs.readFile(configPath, 'utf8');
+
+      const configContent = await fs.readFile(unifiedConfigPath, 'utf8');
       const parsedConfig = JSON.parse(configContent);
-      
+
       // 根据配置文件格式进行适配
-      if (useUnifiedFormat && parsedConfig.unified_flutter_review_config) {
-        // 新的统一配置格式 - 提取review_focus_areas作为review_focus
+      if (parsedConfig.unified_flutter_review_config) {
+        // 统一配置格式 - 提取review_focus_areas作为review_focus
         const unifiedConfig = parsedConfig.unified_flutter_review_config;
         this.flutterConfig = {
           review_focus: this.convertReviewFocusAreas(unifiedConfig.review_focus_areas || {}),
@@ -186,22 +164,22 @@ class CopilotAnalyzer {
           }
         };
       } else {
-        // 旧的配置格式
+        // 兼容旧格式
         this.flutterConfig = parsedConfig;
       }
-      
+
       console.log('✅ 加载Flutter专用配置成功');
     } catch (error) {
       // 使用默认配置
-      this.flutterConfig = { 
+      this.flutterConfig = {
         review_focus: {
           performance: true,
           security: true,
           ui_consistency: true,
           error_handling: true,
           dependency_management: true
-        }, 
-        output_settings: { 
+        },
+        output_settings: {
           include_detailed_diff: false,
           focus_on_flutter_specific: true
         }
@@ -217,7 +195,7 @@ class CopilotAnalyzer {
    */
   convertReviewFocusAreas(reviewFocusAreas) {
     const reviewFocus = {};
-    
+
     for (const [key, area] of Object.entries(reviewFocusAreas)) {
       if (area.enabled) {
         // 将新的区域键映射到旧的键
@@ -225,7 +203,7 @@ class CopilotAnalyzer {
         reviewFocus[mappedKey] = true;
       }
     }
-    
+
     return reviewFocus;
   }
 
@@ -244,7 +222,7 @@ class CopilotAnalyzer {
       'widget_design_and_architecture': 'architecture',
       'dart_code_quality': 'code_quality'
     };
-    
+
     return keyMapping[newKey] || newKey;
   }
 
@@ -253,7 +231,7 @@ class CopilotAnalyzer {
    */
   async checkCopilotEnvironment() {
     const checks = [];
-    
+
     // 检查 VS Code 是否安装
     try {
       console.log('🔍 检查VS Code安装路径:', this.vscodeCommand);
@@ -269,7 +247,7 @@ class CopilotAnalyzer {
     try {
       const { stdout } = await execAsync(`"${this.vscodeCommand}" --list-extensions`);
       const extensions = stdout.split('\n');
-      
+
       if (extensions.includes('github.copilot')) {
         console.log('✅ GitHub Copilot 扩展已安装');
       } else {
@@ -282,7 +260,7 @@ class CopilotAnalyzer {
       } else {
         console.warn('⚠️ GitHub Copilot Chat 扩展未安装（可选）');
       }
-      
+
     } catch (error) {
       this.failureReasons.push('无法检查 VS Code 扩展: ' + error.message);
     }
@@ -333,28 +311,28 @@ class TestWidget extends StatelessWidget {
       const command = `"${this.vscodeCommand}" "${tempDir}" --extensionDevelopmentPath="${tempDir}" --wait`;
       console.log('🧪 执行 Copilot 连接测试...');
       console.log('📋 执行命令:', command);
-      
+
       // 设置超时
-      const timeout = new Promise((_, reject) => 
+      const timeout = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Copilot 测试超时 (30秒)')), 30000)
       );
 
       const execution = execAsync(command);
-      
+
       await Promise.race([execution, timeout]);
 
       // 检查测试结果
       const resultFile = path.join(tempDir, 'copilot-test-result.json');
-      
+
       // 等待结果文件生成
       for (let i = 0; i < 10; i++) {
         try {
           const result = await fs.readFile(resultFile, 'utf8');
           const testResult = JSON.parse(result);
-          
+
           // 清理测试文件
           await fs.rm(tempDir, { recursive: true, force: true });
-          
+
           return testResult;
         } catch (error) {
           await new Promise(resolve => setTimeout(resolve, 1000));
@@ -487,10 +465,10 @@ module.exports = { testCopilot };
   async analyzeCopilot(diff, mrDetails) {
     try {
       console.log('🤖 开始 GitHub Copilot 代码分析...');
-      
+
       // 首先检查环境
       const isAvailable = await this.checkCopilotEnvironment();
-      
+
       if (!isAvailable) {
         const failureReport = this.createFailureReport();
         await this.writeFailureReport(failureReport);
@@ -499,28 +477,28 @@ module.exports = { testCopilot };
 
       // 创建分析工作区
       const workspaceDir = await this.createAnalysisWorkspace(diff, mrDetails);
-      
+
       // 执行 Copilot 分析
       const analysisResult = await this.executeCopilotAnalysis(workspaceDir);
-      
+
       // 清理工作区
       await this.cleanup(workspaceDir);
-      
+
       // 格式化并保存结果
       const formattedResult = this.formatAnalysisResult(analysisResult);
-      
+
       if (formattedResult.status === 'success') {
         console.log('✅ GitHub Copilot 分析成功完成');
       } else {
         await this.writeFailureReport(formattedResult);
       }
-      
+
       return formattedResult;
 
     } catch (error) {
       console.error('❌ Copilot 分析过程出错:', error.message);
       this.failureReasons.push('分析过程异常: ' + error.message);
-      
+
       const errorReport = {
         status: 'error',
         provider: 'copilot',
@@ -536,7 +514,7 @@ module.exports = { testCopilot };
           '5. 重启 VS Code 后重试'
         ]
       };
-      
+
       await this.writeFailureReport(errorReport);
       return errorReport;
     }
@@ -554,9 +532,9 @@ module.exports = { testCopilot };
       if (file.new_path && file.diff) {
         const filePath = path.join(tempDir, file.new_path);
         const fileDir = path.dirname(filePath);
-        
+
         await fs.mkdir(fileDir, { recursive: true });
-        
+
         // 从 diff 中提取实际代码
         const actualCode = this.extractCodeFromDiff(file.diff);
         await fs.writeFile(filePath, actualCode, 'utf8');
@@ -592,12 +570,12 @@ module.exports = { testCopilot };
   extractCodeFromDiff(diff) {
     const lines = diff.split('\n');
     const codeLines = [];
-    
+
     for (const line of lines) {
       if (line.startsWith('@@')) {
         continue; // 跳过 diff 头部
       }
-      
+
       if (line.startsWith('+')) {
         // 新增的代码行
         codeLines.push(line.substring(1));
@@ -606,7 +584,7 @@ module.exports = { testCopilot };
         codeLines.push(line);
       }
     }
-    
+
     return codeLines.join('\n');
   }
 
@@ -616,29 +594,29 @@ module.exports = { testCopilot };
   async executeCopilotAnalysis(workspaceDir) {
     try {
       console.log('🚀 启动 VS Code 进行 Copilot 分析...');
-      
+
       // 创建专门的分析扩展
       const analysisExtension = await this.createAnalysisExtension(workspaceDir);
-      
+
       // 安装并运行扩展
       const installCmd = `"${this.vscodeCommand}" --install-extension "${analysisExtension}"`;
       await execAsync(installCmd);
-      
+
       // 打开工作区并触发分析
       const analyzeCmd = `"${this.vscodeCommand}" "${workspaceDir}" --command "copilot.analyzeWorkspace" --wait`;
-      
+
       console.log('⏳ 等待 Copilot 分析完成...');
       await execAsync(analyzeCmd, { timeout: 60000 }); // 60秒超时
-      
+
       // 读取分析结果
       const resultFile = path.join(workspaceDir, 'copilot-analysis-result.json');
-      
+
       // 等待结果文件生成
       for (let i = 0; i < 30; i++) {
         try {
           const result = await fs.readFile(resultFile, 'utf8');
           const analysis = JSON.parse(result);
-          
+
           if (analysis.status === 'completed') {
             console.log('✅ Copilot 分析完成');
             return analysis;
@@ -651,10 +629,10 @@ module.exports = { testCopilot };
           await new Promise(resolve => setTimeout(resolve, 2000));
         }
       }
-      
+
       this.failureReasons.push('Copilot 分析超时，未在60秒内完成');
       return this.createFailureReport();
-      
+
     } catch (error) {
       console.error('❌ Copilot 分析执行失败:', error.message);
       this.failureReasons.push('分析执行失败: ' + error.message);
@@ -970,7 +948,7 @@ module.exports = { activate, deactivate };
     const analysis = analysisResult.analysis;
     if (!analysis || !analysis.file_analyses) return false;
 
-    return analysis.file_analyses.some(fileAnalysis => 
+    return analysis.file_analyses.some(fileAnalysis =>
       fileAnalysis.file && fileAnalysis.file.endsWith('.dart')
     );
   }
@@ -992,7 +970,7 @@ module.exports = { activate, deactivate };
       analysis.file_analyses.forEach(fileAnalysis => {
         if (fileAnalysis.file && fileAnalysis.file.endsWith('.dart')) {
           flutterAnalysis.dart_files_count++;
-          
+
           // 分析Widget使用
           if (fileAnalysis.analysis?.quality_indicators) {
             const indicators = fileAnalysis.analysis.quality_indicators;
@@ -1018,14 +996,14 @@ module.exports = { activate, deactivate };
     try {
       const reportsDir = './reports';
       await fs.mkdir(reportsDir, { recursive: true });
-      
+
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const filename = `copilot_failure_${timestamp}.json`;
       const filepath = path.join(reportsDir, filename);
-      
+
       await fs.writeFile(filepath, JSON.stringify(report, null, 2), 'utf8');
       console.log(`📝 失败报告已保存: ${filepath}`);
-      
+
       return filepath;
     } catch (error) {
       console.error('❌ 保存失败报告时出错:', error.message);

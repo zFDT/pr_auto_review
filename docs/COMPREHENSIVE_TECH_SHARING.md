@@ -1481,7 +1481,6 @@ class PRReviewer {
     // reviewPR()
     //   ├── getMRDetails()             // 获取MR详情
     //   ├── getMRChanges()            // 获取代码变更
-    //   ├── getMRComments()           // 获取已有评论
     //   ├── aiAnalyzer.analyzeCode()  // AI分析 (核心)
     //   ├── generateReviewReport()    // 生成报告
     //   ├── saveReportToFile()        // 保存报告
@@ -1512,17 +1511,11 @@ class PRReviewer {
         estimatedLines: diff.split('\n').length
       });
       
-      // 步骤3: 获取已有评论
-      const comments = await this.getMRComments(projectName, mrId);
-      this.logger.info('评论获取完成', { 
-        commentCount: comments.length 
-      });
-      
-      // 步骤4: 分析代码变更 (核心步骤)
+      // 步骤3: 分析代码变更 (核心步骤)
       const analysis = this.analyzeChanges(diff);
       this.logger.info('代码分析完成', analysis);
       
-      // 步骤5: AI智能分析 (最重要的步骤)
+      // 步骤4: AI智能分析 (最重要的步骤)
       let aiAnalysis = null;
       if (this.shouldUseAI(analysis)) {
         aiAnalysis = await this.aiAnalyzer.analyzeCode(diff, mrDetails);
@@ -1532,18 +1525,17 @@ class PRReviewer {
         });
       }
       
-      // 步骤6: 生成评审报告
+      // 步骤5: 生成评审报告
       const report = this.generateReviewReport(
         projectName, 
         mrId, 
         mrDetails, 
         diff, 
-        comments, 
         analysis, 
         aiAnalysis
       );
       
-      // 步骤7: 保存报告文件
+      // 步骤6: 保存报告文件
       const reportFile = await this.saveReportToFile(
         projectName, 
         mrId, 
@@ -1551,7 +1543,7 @@ class PRReviewer {
       );
       this.logger.info('报告保存完成', { filePath: reportFile });
       
-      // 步骤8: 发送通知
+      // 步骤7: 发送通知
       await this.sendNotifications(
         projectName, 
         mrId, 
@@ -2057,8 +2049,6 @@ sequenceDiagram
     GitLab-->>Reviewer: MR数据
     Reviewer->>GitLab: 获取代码变更
     GitLab-->>Reviewer: Diff数据
-    Reviewer->>GitLab: 获取评论
-    GitLab-->>Reviewer: 评论数据
     
     Reviewer->>AIAnalyzer: analyzeCode(diff, mrDetails)
     AIAnalyzer->>AIAnalyzer: 代码预分析

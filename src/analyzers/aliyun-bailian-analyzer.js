@@ -42,9 +42,9 @@ class AliyunBailianAnalyzer {
     // 高性能并发控制配置
     this.requestQueue = [];
     this.processing = false;
-    this.maxConcurrent = this.bailianConfig.maxConcurrency || this.bailianConfig.max_concurrent || 10; // 大幅提高并发数
-    this.retryAttempts = this.bailianConfig.maxRetries || this.bailianConfig.retry_attempts || 2; // 降低重试次数
-    this.retryDelay = this.bailianConfig.retryDelay || this.bailianConfig.retry_delay || 500; // 降低重试延迟
+    this.maxConcurrent = this.bailianConfig.maxConcurrency || 10; // 统一使用maxConcurrency
+    this.retryAttempts = this.bailianConfig.maxRetries || 3; // 确保使用配置文件中的重试次数
+    this.retryDelay = this.bailianConfig.retryDelay || 1000; // 确保使用配置文件中的重试延迟
 
     // 请求计数器（用于文件命名）
     this.requestCounter = 0;
@@ -87,18 +87,18 @@ class AliyunBailianAnalyzer {
       base_url: envConfig.base_url || configFile.base_url || 'https://dashscope.aliyuncs.com/api/v1',
 
       // 高性能配置
-      timeout: configFile.timeout || 60000,  // 60秒超时，适应高并发
+      timeout: configFile.timeout || 120000,  // 120秒超时，适应复杂分析
       max_tokens: configFile.max_tokens || configFile.maxTokens || 8192,  // 支持更大token
       temperature: configFile.temperature || 0.1,  // 降低随机性提高一致性
 
-      // 高并发控制（移除缓存相关配置）
-      maxConcurrency: configFile.maxConcurrency || configFile.max_concurrent || 10,
-      maxRetries: configFile.maxRetries || configFile.retry_attempts || 2,
-      retryDelay: configFile.retryDelay || configFile.retry_delay || 500,
+      // 高并发控制（配置项统一）
+      maxConcurrency: configFile.maxConcurrency || 10,
+      maxRetries: configFile.maxRetries || 3,
+      retryDelay: configFile.retryDelay || 1000,
 
       // 优化的分块处理配置
-      maxChunkSize: configFile.maxChunkSize || configFile.max_chunk_size || 6,  // 减少分块提高速度
-      maxDiffLength: configFile.maxDiffLength || configFile.max_diff_length || 20000,  // 增加diff长度
+      maxChunkSize: configFile.maxChunkSize || 6,  // 减少分块提高速度
+      maxDiffLength: configFile.maxDiffLength || 20000,  // 增加diff长度
 
       // 流处理配置（禁用以提高吞吐量）
       streamMode: false,
@@ -322,14 +322,14 @@ class AliyunBailianAnalyzer {
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
       const chunkPrompt = this.buildChunkPrompt(chunk, mrDetails);
-      const chunkResult = await this.callBailianAPI(chunkPrompt, 1, i + 1, language, projectType); // 传递语言和项目类型
+      const chunkResult = await this.callBailianAPI(chunkPrompt, 1, i + 1, language, projectType, false); // 明确指定非合并模式
       analyses.push(chunkResult);
     }
 
-    // 合并分析结果
-    const mergedAnalysis = this.mergeAnalyses(analyses);
+    // 智能合并分析结果
+    const mergedAnalysis = await this.mergeAnalyses(analyses);
 
-    // 计算本次分析使用的token
+    // 计算本次分析使用的token（包括智能合并的token）
     const sessionTokensUsed = {
       inputTokens: this.tokenStats.totalInputTokens - sessionStartTokens.totalInputTokens,
       outputTokens: this.tokenStats.totalOutputTokens - sessionStartTokens.totalOutputTokens,
@@ -337,9 +337,10 @@ class AliyunBailianAnalyzer {
       requests: this.tokenStats.requestCount - sessionStartTokens.requestCount
     };
 
-    // 输出本次分析的token使用统计
+    // 输出本次分析的token使用统计（包括智能合并）
+    const mergeRequests = mergedAnalysis.merge_method === 'ai_intelligent' ? 1 : 0;
     console.log('\n📊 阿里云百炼Token使用统计:');
-    console.log(`🔄 本次分析请求数: ${sessionTokensUsed.requests}`);
+    console.log(`🔄 本次分析请求数: ${sessionTokensUsed.requests} (包含${analyses.length}个分块分析${mergeRequests ? ' + 1个智能合并' : ''})`);
     console.log(`📝 本次输入Token: ${sessionTokensUsed.inputTokens.toLocaleString()}`);
     console.log(`💬 本次输出Token: ${sessionTokensUsed.outputTokens.toLocaleString()}`);
     console.log(`📋 本次总计Token: ${sessionTokensUsed.totalTokens.toLocaleString()}`);
@@ -363,9 +364,15 @@ class AliyunBailianAnalyzer {
       },
       timestamp: new Date().toISOString(),
       chunks_analyzed: analyses.length,
+      merge_method: mergedAnalysis.merge_method || 'unknown',
       token_usage: {
         session: sessionTokensUsed,
-        cumulative: { ...this.tokenStats }
+        cumulative: { ...this.tokenStats },
+        breakdown: {
+          chunk_analysis_requests: analyses.length,
+          merge_requests: mergedAnalysis.merge_method === 'ai_intelligent' ? 1 : 0,
+          total_requests: sessionTokensUsed.requests
+        }
       }
     };
   }
@@ -373,7 +380,7 @@ class AliyunBailianAnalyzer {
   /**
    * 调用阿里云百炼API（带重试机制）
    */
-  async callBailianAPI(prompt, attempt = 1, chunkIndex = null, language = null, projectType = null) {
+  async callBailianAPI(prompt, attempt = 1, chunkIndex = null, language = null, projectType = null, isMergeMode = false) {
     const { api_key, model, base_url, max_tokens, temperature, timeout } = this.bailianConfig;
 
     const requestBody = {
@@ -382,7 +389,7 @@ class AliyunBailianAnalyzer {
         messages: [
           {
             role: 'system',
-            content: this.getSystemPrompt(language, projectType)
+            content: isMergeMode ? this.getMergeSystemPrompt() : this.getSystemPrompt(language, projectType)
           },
           {
             role: 'user',
@@ -391,8 +398,8 @@ class AliyunBailianAnalyzer {
         ]
       },
       parameters: {
-        max_tokens: max_tokens,
-        temperature: temperature,
+        max_tokens: isMergeMode ? Math.min(max_tokens * 1.5, 12288) : max_tokens, // 合并模式使用更多token
+        temperature: isMergeMode ? 0.05 : temperature, // 合并模式使用更低温度确保一致性
         result_format: 'message',
         // 优化参数
         top_p: 0.8,  // 核采样参数，提高输出质量
@@ -440,19 +447,46 @@ class AliyunBailianAnalyzer {
     } catch (error) {
       clearTimeout(timeoutId);
 
+      // 处理超时错误，保持原始错误信息以便重试判断
+      let processedError = error;
       if (error.name === 'AbortError') {
-        throw new Error(`API调用超时 (${timeout}ms)`);
+        processedError = new Error(`API调用超时 (${timeout}ms)`);
+        processedError.isTimeout = true;
+        processedError.originalError = error;
       }
 
       // 重试逻辑
-      if (attempt < this.retryAttempts && this.shouldRetry(error)) {
-        console.warn(`⚠️ API调用失败，${this.retryDelay}ms后重试: ${error.message}`);
+      if (attempt < this.retryAttempts && this.shouldRetry(processedError)) {
+        console.warn(`⚠️ API调用失败，${this.retryDelay * attempt}ms后重试 (${attempt}/${this.retryAttempts}): ${processedError.message}`);
         await this.delay(this.retryDelay * attempt); // 指数退避
-        return this.callBailianAPI(prompt, attempt + 1, chunkIndex);
+        return this.callBailianAPI(prompt, attempt + 1, chunkIndex, language, projectType, isMergeMode);
       }
 
-      throw error;
+      throw processedError;
     }
+  }
+
+  /**
+   * 获取合并模式的系统提示词
+   */
+  getMergeSystemPrompt() {
+    return `你是一位资深的代码审查专家，专门负责整合和合并多个代码分析结果。
+
+你的任务是：
+1. 分析多个代码审查结果，识别重复和相似内容
+2. 按重要程度和严重程度对问题进行分类排序
+3. 将相关的问题和建议进行智能分组
+4. 生成清晰、专业、有条理的综合分析报告
+5. 确保最终结果比原始分析更加精准和有价值
+
+输出要求：
+- 使用结构化的格式
+- 避免信息冗余
+- 突出重点问题
+- 提供可操作的建议
+- 保持专业和客观的语调
+
+请严格按照用户指定的格式输出结果。`;
   }
 
   /**
@@ -477,6 +511,20 @@ class AliyunBailianAnalyzer {
 
       return `📁 ${filePath} (${changeType})\n${file.diff || ''}`;
     }).join('\n\n' + '='.repeat(50) + '\n\n');
+
+    // 获取输出格式要求
+    const outputRequirements = this.reviewStandardsManager.standards?.unified_flutter_review_config?.ai_analysis_config?.output_requirements;
+
+    const formatRequirements = outputRequirements ? `
+
+📄 **输出格式要求：**
+${outputRequirements.requirements?.map(req => `- ${req}`).join('\n') || ''}
+
+📋 **必须遵循以下结构：**
+${outputRequirements.sections?.join('\n\n') || ''}
+
+⚠️ **注意：** ${outputRequirements.style || '专业、详细、实用'}
+` : '';
 
     return `请对以下代码变更进行专业的代码审查：
 
@@ -515,28 +563,15 @@ ${diffText}
    - 模块化程度
    - 测试覆盖率
 
-📊 **输出格式：**
-请按照以下格式提供分析报告：
+${formatRequirements}
 
-## 总体评分
-- 综合评分: X/10分
-- 风险等级: [低/中/高]
+📊 **输出要求：**
+- 必须包含具体的代码示例和改进建议
+- 使用markdown格式，包含emoji使报告更易读
+- 提供详细的问题分析和解决方案
+- 对每个问题说明影响程度和修复优先级
 
-## 详细分析
-### ✅ 优点
-- [列出代码的优点]
-
-### ⚠️ 问题发现
-- [按严重程度列出问题]
-
-### 💡 改进建议
-- [提供具体的改进建议]
-
-### 🔒 安全建议
-- [如有安全相关建议]
-
-## 总结
-[简要总结本次代码审查的核心发现和建议]`;
+请确保分析详细、实用，并提供可操作的改进建议。`;
   }
 
   /**
@@ -550,8 +585,8 @@ ${diffText}
    * 分割大型差异（优化版）
    */
   chunkDiff(diff) {
-    const maxChunkSize = this.bailianConfig.max_chunk_size || 8;
-    const maxDiffLength = this.bailianConfig.max_diff_length || 15000;
+    const maxChunkSize = this.bailianConfig.maxChunkSize || 6;
+    const maxDiffLength = this.bailianConfig.maxDiffLength || 20000;
     const chunks = [];
 
     let currentChunk = [];
@@ -615,6 +650,7 @@ ${diffText}
 
     return {
       ...analysis,
+      content: content, // 保留AI返回的完整原始内容
       raw_response: content,
       usage: {
         input_tokens: usage.input_tokens || 0,
@@ -692,9 +728,9 @@ ${diffText}
   }
 
   /**
-   * 合并多个分析结果
+   * 合并多个分析结果（AI智能合并版）
    */
-  mergeAnalyses(analyses) {
+  async mergeAnalyses(analyses) {
     if (analyses.length === 0) {
       return { summary: '无分析结果', score: 5, risk_level: 'medium' };
     }
@@ -703,7 +739,152 @@ ${diffText}
       return analyses[0];
     }
 
-    // 合并分析结果
+    console.log(`🧠 开始AI智能合并 ${analyses.length} 个分析结果...`);
+
+    try {
+      // 使用AI进行智能合并
+      const aiMergedResult = await this.performAIMerge(analyses);
+      console.log('✅ AI智能合并完成');
+      return aiMergedResult;
+    } catch (error) {
+      console.warn('⚠️ AI智能合并失败，使用简单合并方法:', error.message);
+      return this.performSimpleMerge(analyses);
+    }
+  }
+
+  /**
+   * 使用AI进行智能合并分析结果
+   */
+  async performAIMerge(analyses) {
+    // 记录合并前的token统计
+    const mergeStartTokens = { ...this.tokenStats };
+
+    // 构建合并提示词
+    const mergePrompt = this.buildMergePrompt(analyses);
+
+    console.log(`🔄 开始调用AI进行智能合并...`);
+
+    // 调用AI进行合并
+    const mergedResult = await this.callBailianAPI(mergePrompt, 1, null, null, null, true);
+
+    // 计算合并阶段使用的token
+    const mergeTokensUsed = {
+      inputTokens: this.tokenStats.totalInputTokens - mergeStartTokens.totalInputTokens,
+      outputTokens: this.tokenStats.totalOutputTokens - mergeStartTokens.totalOutputTokens,
+      totalTokens: this.tokenStats.totalTokens - mergeStartTokens.totalTokens
+    };
+
+    console.log(`🧠 智能合并Token使用: 输入=${mergeTokensUsed.inputTokens}, 输出=${mergeTokensUsed.outputTokens}, 总计=${mergeTokensUsed.totalTokens}`);
+
+    // 计算基础评分和风险等级（作为AI结果的补充）
+    const avgScore = analyses.reduce((sum, a) => sum + (a.score || 7), 0) / analyses.length;
+    const maxRiskLevel = this.determineMaxRiskLevel(analyses);
+
+    return {
+      summary: mergedResult.summary || mergedResult.raw_response.substring(0, 500),
+      score: mergedResult.score || avgScore,
+      risk_level: mergedResult.risk_level || maxRiskLevel,
+      strengths: mergedResult.strengths || [],
+      issues: mergedResult.issues || [],
+      suggestions: mergedResult.suggestions || [],
+      security_notes: mergedResult.security_notes || [],
+      raw_response: mergedResult.raw_response,
+      merge_method: 'ai_intelligent',
+      chunks_merged: analyses.length,
+      merge_token_usage: mergeTokensUsed  // 添加合并阶段的token使用信息
+    };
+  }  /**
+   * 构建AI合并提示词
+   */
+  buildMergePrompt(analyses) {
+    const analysisTexts = analyses.map((analysis, index) => {
+      return `
+### 分析结果 ${index + 1}
+**评分**: ${analysis.score || 7}/10
+**风险等级**: ${analysis.risk_level || 'medium'}
+
+**优点**:
+${(analysis.strengths || []).map(s => `- ${s}`).join('\n')}
+
+**问题**:
+${(analysis.issues || []).map(i => `- ${i}`).join('\n')}
+
+**建议**:
+${(analysis.suggestions || []).map(s => `- ${s}`).join('\n')}
+
+**安全建议**:
+${(analysis.security_notes || []).map(s => `- ${s}`).join('\n')}
+
+**原始分析**:
+${analysis.raw_response ? analysis.raw_response.substring(0, 1000) : '无详细分析'}
+`;
+    }).join('\n' + '='.repeat(80) + '\n');
+
+    return `请将以下 ${analyses.length} 个代码审查分析结果进行智能合并整合，生成一个统一、清晰、专业的综合分析报告。
+
+📋 **需要合并的分析结果**:
+${analysisTexts}
+
+🎯 **合并要求**:
+
+1. **去重和整合**: 
+   - 识别并合并相似或重复的问题、建议
+   - 保留最具代表性和重要性的内容
+   - 避免信息冗余
+
+2. **优先级排序**:
+   - 按严重程度对问题进行排序
+   - 按影响程度对建议进行排序
+   - 突出最关键的安全问题
+
+3. **智能分类**:
+   - 将相关问题归类合并
+   - 将相关建议进行分组
+   - 识别问题之间的关联性
+
+4. **综合评估**:
+   - 重新评估整体代码质量评分（1-10分）
+   - 确定综合风险等级（low/medium/high）
+   - 生成准确的综合总结
+
+📊 **输出格式**:
+## 综合评分
+- 综合评分: X/10分
+- 风险等级: [low/medium/high]
+
+## 优点总结
+- [整合后的主要优点，避免重复]
+
+## 问题汇总
+### 🔴 高优先级问题
+- [最严重的问题]
+
+### 🟡 中优先级问题  
+- [中等严重问题]
+
+### 🟢 低优先级问题
+- [轻微问题]
+
+## 改进建议
+### 💡 核心建议
+- [最重要的改进建议]
+
+### 🔧 优化建议
+- [性能和代码质量优化建议]
+
+## 安全建议
+- [安全相关的重要建议]
+
+## 综合总结
+[专业总结，包含：整体代码质量评价、主要风险点、关键改进方向]
+
+请确保合并结果比原始分析更加清晰、专业、有条理。`;
+  }
+
+  /**
+   * 简单合并方法（作为AI合并失败时的备选方案）
+   */
+  performSimpleMerge(analyses) {
     const merged = {
       summary: '',
       score: 0,
@@ -719,9 +900,7 @@ ${diffText}
     merged.score = scores.reduce((sum, score) => sum + score, 0) / scores.length;
 
     // 确定最高风险等级
-    const riskLevels = analyses.map(a => a.risk_level || 'medium');
-    if (riskLevels.includes('high')) merged.risk_level = 'high';
-    else if (riskLevels.includes('medium')) merged.risk_level = 'medium';
+    merged.risk_level = this.determineMaxRiskLevel(analyses);
 
     // 合并各个字段
     for (const analysis of analyses) {
@@ -739,8 +918,20 @@ ${diffText}
 
     // 生成综合总结
     merged.summary = `共分析 ${analyses.length} 个代码块，发现 ${merged.issues.length} 个问题，${merged.suggestions.length} 条建议。总体评分 ${merged.score.toFixed(1)}/10，风险等级：${merged.risk_level}`;
+    merged.merge_method = 'simple_fallback';
+    merged.chunks_merged = analyses.length;
 
     return merged;
+  }
+
+  /**
+   * 确定最高风险等级
+   */
+  determineMaxRiskLevel(analyses) {
+    const riskLevels = analyses.map(a => a.risk_level || 'medium');
+    if (riskLevels.includes('high')) return 'high';
+    else if (riskLevels.includes('medium')) return 'medium';
+    return 'low';
   }
 
   /**
@@ -759,6 +950,12 @@ ${diffText}
       '504'  // 网关超时
     ];
 
+    // 检查是否是超时错误
+    if (error.isTimeout || error.name === 'AbortError') {
+      return true;
+    }
+
+    // 检查其他可重试的错误
     return retryableErrors.some(pattern =>
       error.message.includes(pattern) || error.code === pattern
     );
@@ -864,10 +1061,10 @@ ${diffText}
       performance: {
         timeout: this.bailianConfig.timeout,
         max_tokens: this.bailianConfig.max_tokens,
-        max_concurrent: this.bailianConfig.max_concurrent,
-        retry_attempts: this.bailianConfig.retry_attempts,
-        cache_size: this.analysisCache.size,
-        max_cache_size: this.maxCacheSize
+        maxConcurrency: this.bailianConfig.maxConcurrency,
+        maxRetries: this.bailianConfig.maxRetries,
+        maxChunkSize: this.bailianConfig.maxChunkSize,
+        maxDiffLength: this.bailianConfig.maxDiffLength
       }
     };
   }
@@ -876,33 +1073,21 @@ ${diffText}
    * 获取性能统计
    */
   getPerformanceStats() {
-    const cacheHitRate = this.totalRequests > 0
-      ? ((this.cacheHits || 0) / this.totalRequests * 100).toFixed(2)
-      : '0.00';
-
     return {
-      cache_hit_rate: `${cacheHitRate}%`,
-      cache_size: this.analysisCache.size,
-      total_requests: this.totalRequests || 0,
-      cache_hits: this.cacheHits || 0,
-      avg_response_time: this.avgResponseTime || 0,
       token_usage: {
         total_input_tokens: this.tokenStats.totalInputTokens,
         total_output_tokens: this.tokenStats.totalOutputTokens,
         total_tokens: this.tokenStats.totalTokens,
         request_count: this.tokenStats.requestCount,
         average_tokens_per_request: Math.round(this.tokenStats.averageTokensPerRequest)
+      },
+      performance_metrics: {
+        concurrent_requests: this.performanceMetrics.concurrentRequests,
+        max_concurrent_reached: this.performanceMetrics.maxConcurrentReached,
+        total_requests: this.performanceMetrics.totalRequests,
+        average_response_time: this.performanceMetrics.averageResponseTime
       }
     };
-  }
-
-  /**
-   * 清理所有缓存
-   */
-  clearCache() {
-    const oldSize = this.analysisCache.size;
-    this.analysisCache.clear();
-    console.log(`🗑️ 清理所有缓存，释放 ${oldSize} 个缓存项`);
   }
 
   /**
