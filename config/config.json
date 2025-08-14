@@ -3,6 +3,7 @@
     "host": "https://git.dreame.tech",
     "token": "${GITLAB_TOKEN}"
   },
+  "_projects_comment": "projects配置现在是可选的。如果不配置，系统将通过GitLab API自动获取所有可访问的项目",
   "projects": {
     "ZM App": {
       "id": 9831,
