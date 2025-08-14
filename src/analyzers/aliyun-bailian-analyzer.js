@@ -512,20 +512,6 @@ class AliyunBailianAnalyzer {
       return `📁 ${filePath} (${changeType})\n${file.diff || ''}`;
     }).join('\n\n' + '='.repeat(50) + '\n\n');
 
-    // 获取输出格式要求
-    const outputRequirements = this.reviewStandardsManager.standards?.unified_flutter_review_config?.ai_analysis_config?.output_requirements;
-
-    const formatRequirements = outputRequirements ? `
-
-📄 **输出格式要求：**
-${outputRequirements.requirements?.map(req => `- ${req}`).join('\n') || ''}
-
-📋 **必须遵循以下结构：**
-${outputRequirements.sections?.join('\n\n') || ''}
-
-⚠️ **注意：** ${outputRequirements.style || '专业、详细、实用'}
-` : '';
-
     return `请对以下代码变更进行专业的代码审查：
 
 📋 **MR信息**
@@ -563,16 +549,30 @@ ${diffText}
    - 模块化程度
    - 测试覆盖率
 
-${formatRequirements}
+📊 **输出格式：**
+请按照以下格式提供分析报告：
 
-📊 **输出要求：**
-- 必须包含具体的代码示例和改进建议
-- 使用markdown格式，包含emoji使报告更易读
-- 提供详细的问题分析和解决方案
-- 对每个问题说明影响程度和修复优先级
+## 总体评分
+- 综合评分: X/10分
+- 风险等级: [低/中/高]
 
-请确保分析详细、实用，并提供可操作的改进建议。`;
+## 详细分析
+### ✅ 优点
+- [列出代码的优点]
+
+### ⚠️ 问题发现
+- [按严重程度列出问题]
+
+### 💡 改进建议
+- [提供具体的改进建议]
+
+### 🔒 安全建议
+- [如有安全相关建议]
+
+## 总结
+[简要总结本次代码审查的核心发现和建议]`;
   }
+
 
   /**
    * 构建代码块提示词

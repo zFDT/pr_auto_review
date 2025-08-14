@@ -1040,13 +1040,6 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
   generateAIAnalysisSection(aiAnalysis) {
     let section = `## 🤖 AI智能分析\n\n`;
 
-    // 优先使用AI返回的原始内容（更丰富）
-    if (aiAnalysis.content) {
-      // 如果AI返回了格式化的内容，直接使用
-      section += aiAnalysis.content + '\n\n';
-      return section;
-    }
-
     // 如果AI有结构化数据，处理结构化输出
     if (aiAnalysis.quality_score !== null && aiAnalysis.quality_score !== undefined) {
       const scoreEmoji = this.getQualityScoreEmoji(aiAnalysis.quality_score);
@@ -1059,21 +1052,13 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
 
     if (aiAnalysis.potential_issues && aiAnalysis.potential_issues.length > 0) {
       section += `### 🐛 潜在问题\n`;
-      if (Array.isArray(aiAnalysis.potential_issues)) {
-        aiAnalysis.potential_issues.forEach(issue => section += `- ${issue}\n`);
-      } else {
-        section += `${aiAnalysis.potential_issues}\n`;
-      }
+      aiAnalysis.potential_issues.forEach(issue => section += `- ${issue}\n`);
       section += '\n';
     }
 
-    if (aiAnalysis.security_concerns) {
+    if (aiAnalysis.security_concerns && aiAnalysis.security_concerns.length > 0) {
       section += `### 🔒 安全性考虑\n`;
-      if (Array.isArray(aiAnalysis.security_concerns)) {
-        aiAnalysis.security_concerns.forEach(concern => section += `- ${concern}\n`);
-      } else {
-        section += `${aiAnalysis.security_concerns}\n`;
-      }
+      aiAnalysis.security_concerns.forEach(concern => section += `- ${concern}\n`);
       section += '\n';
     }
 
@@ -1337,44 +1322,34 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
     let aiSummary = '';
     let mainIssues = [];
     let mainSuggestions = [];
-    let aiStatus = 'disabled';
-    let aiErrorMessage = '';
+    let aiStatus = 'failed'; // 默认失败状态
 
     if (aiAnalysis) {
-      aiStatus = aiAnalysis.status || 'unknown';
+      // 处理不同AI分析器返回的数据结构
+      let actualAnalysisData = aiAnalysis;
 
-      // 检查AI分析是否失败
-      if (aiStatus === 'failed' || aiStatus === 'skipped') {
-        aiErrorMessage = aiAnalysis.error || '未知错误';
-        aiSummary = `AI分析${aiStatus === 'failed' ? '失败' : '跳过'}: ${aiErrorMessage}`;
-        qualityColor = '🔴';
-      } else if (aiAnalysis.analysis) {
-        // 处理不同AI分析器返回的数据结构
-        let actualAnalysisData = aiAnalysis.analysis;
+      // 如果是嵌套结构，提取analysis字段
+      if (aiAnalysis.analysis && typeof aiAnalysis.analysis === 'object') {
+        actualAnalysisData = aiAnalysis.analysis;
+      }
 
-        // 如果是嵌套结构，提取analysis字段
-        if (aiAnalysis.analysis && typeof aiAnalysis.analysis === 'object') {
-          actualAnalysisData = aiAnalysis.analysis;
-        }
-
-        qualityScore = actualAnalysisData.quality_score;
-        if (qualityScore !== null) {
-          qualityColor = qualityScore >= 8 ? '🟢' : qualityScore >= 6 ? '🟡' : '🔴';
-        }
-        aiSummary = actualAnalysisData.summary || '';
-
-        // 提取主要问题（限制数量）
-        if (actualAnalysisData.potential_issues && actualAnalysisData.potential_issues.length > 0) {
-          mainIssues = actualAnalysisData.potential_issues.slice(0, 3);
-        }
-        if (actualAnalysisData.improvement_suggestions && actualAnalysisData.improvement_suggestions.length > 0) {
-          mainSuggestions = actualAnalysisData.improvement_suggestions.slice(0, 3);
-        }
+      // 如果有有效的AI分析数据，设置状态为成功
+      if (actualAnalysisData && typeof actualAnalysisData === 'object') {
         aiStatus = 'success';
-      } else {
-        aiSummary = 'AI分析未返回有效结果';
-        aiStatus = 'no_result';
-        qualityColor = '🟡';
+      }
+
+      qualityScore = actualAnalysisData.quality_score;
+      if (qualityScore !== null) {
+        qualityColor = qualityScore >= 8 ? '🟢' : qualityScore >= 6 ? '🟡' : '🔴';
+      }
+      aiSummary = actualAnalysisData.summary || '';
+
+      // 提取主要问题（限制数量）
+      if (actualAnalysisData.potential_issues && actualAnalysisData.potential_issues.length > 0) {
+        mainIssues = actualAnalysisData.potential_issues.slice(0, 3);
+      }
+      if (actualAnalysisData.improvement_suggestions && actualAnalysisData.improvement_suggestions.length > 0) {
+        mainSuggestions = actualAnalysisData.improvement_suggestions.slice(0, 3);
       }
     }
 
@@ -1431,35 +1406,11 @@ ${mrDetails.description ? mrDetails.description.trim() : '_无描述信息_'}
     };
 
     // 添加AI评分部分
-    if (aiStatus === 'failed' || aiStatus === 'skipped') {
-      cardData.card.elements.push({
-        tag: "div",
-        text: {
-          content: `**🤖 AI分析状态**: 🔴 ${aiStatus === 'failed' ? '失败' : '跳过'}\n**❗ 原因**: ${aiErrorMessage}`,
-          tag: "lark_md"
-        }
-      });
-    } else if (aiStatus === 'no_result') {
-      cardData.card.elements.push({
-        tag: "div",
-        text: {
-          content: `**🤖 AI分析状态**: 🟡 无有效结果\n**📋 说明**: AI分析未返回可用的评估数据`,
-          tag: "lark_md"
-        }
-      });
-    } else if (qualityScore !== null) {
+    if (qualityScore !== null) {
       cardData.card.elements.push({
         tag: "div",
         text: {
           content: `**🤖 AI评分**: ${qualityColor} ${qualityScore}/10`,
-          tag: "lark_md"
-        }
-      });
-    } else if (aiStatus === 'disabled') {
-      cardData.card.elements.push({
-        tag: "div",
-        text: {
-          content: `**🤖 AI分析**: ⚪ 未启用`,
           tag: "lark_md"
         }
       });

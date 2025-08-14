@@ -4,6 +4,18 @@
 
 ## 2025-08-14
 
+### 飞书卡片生成错误修复
+
+**问题发现：**
+- 在 `generateFeishuCardData` 方法中，`aiStatus` 变量未定义就被使用
+- 错误发生在生成飞书卡片时，导致整个评审流程失败
+- ReferenceError: aiStatus is not defined at line 1359
+
+**修改内容：**
+- 在 `generateFeishuCardData` 方法中添加 `aiStatus` 变量定义
+- 默认状态设为 'failed'，当有有效AI分析数据时设为 'success'
+- 确保飞书卡片的模板颜色能正确根据AI分析状态显示
+
 ### 阿里云百炼重试机制修复
 
 **问题发现：**
