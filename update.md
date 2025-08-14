@@ -2,6 +2,24 @@
 
 本文件记录所有项目变更，每次修改都要在此文件中追加记录。
 
+## 2025-08-14
+
+### Git 提交恢复
+
+- 恢复了之前在切换分支时丢失的重要提交：
+  - `629820c` - feat: Optimize Flutter configuration management and integrate GitHub Copilot analysis
+  - `a3df6a7` - feat: 添加项目列表功能，支持从配置文件和GitLab API动态获取项目信息（8.14）
+- 使用 git cherry-pick 命令恢复了完整的功能代码
+- 项目列表功能和Flutter配置优化已完全恢复
+
+### GitHub 和 VS Code 开发环境优化
+
+- 优化了 `.github` 和 `.vscode` 配置目录
+- 添加了 GitHub Actions CI 工作流
+- 创建了完整的 Issue 和 PR 模板
+- 配置了 VS Code 扩展推荐、调试配置、任务配置
+- 从 `.gitignore` 中移除 `.vscode/` 以便版本控制
+
 ## 2025-01-14
 
 ### 独立运行优化 - 移除缓存机制
