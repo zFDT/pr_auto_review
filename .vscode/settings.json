@@ -1,0 +1,97 @@
+{
+  // GitHub Copilot 配置
+  "github.copilot.chat.codeGeneration.useInstructionFiles": true,
+  "github.copilot.enable": {
+    "*": true,
+    "markdown": true,
+    "javascript": true,
+    "json": true
+  },
+  "github.copilot.editor.enableAutoCompletions": true,
+  "github.copilot.chat.enableCodeActions": true,
+  
+  // 文件关联
+  "files.associations": {
+    "update.md": "markdown",
+    "copilot-instructions.md": "markdown",
+    "*.config.json": "jsonc"
+  },
+  
+  // 编辑器配置
+  "editor.inlineSuggest.enabled": true,
+  "editor.suggest.preview": true,
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll": "explicit"
+  },
+  "editor.insertSpaces": true,
+  "editor.tabSize": 2,
+  "editor.detectIndentation": true,
+  "editor.wordWrap": "on",
+  "editor.rulers": [80, 120],
+  
+  // 搜索和文件排除配置
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/temp": true,
+    "**/backups": true,
+    "**/.git": true,
+    "**/reports": true
+  },
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/temp": true,
+    "**/.git": false
+  },
+  
+  // 项目特定配置
+  "json.schemas": [
+    {
+      "fileMatch": ["config/config.json"],
+      "schema": {
+        "type": "object",
+        "properties": {
+          "gitlab": { "type": "object" },
+          "ai_config": { "type": "object" },
+          "project_mapping": { "type": "object" },
+          "report_config": { "type": "object" }
+        }
+      }
+    }
+  ],
+  
+  // Markdown 配置
+  "markdown.preview.breaks": true,
+  "markdown.preview.linkify": true,
+  
+  // JavaScript/Node.js 配置
+  "javascript.preferences.quoteStyle": "single",
+  "javascript.suggest.autoImports": true,
+  "javascript.updateImportsOnFileMove.enabled": "always",
+  
+  // 终端配置
+  "terminal.integrated.defaultProfile.windows": "PowerShell",
+  "terminal.integrated.profiles.windows": {
+    "PowerShell": {
+      "source": "PowerShell",
+      "icon": "terminal-powershell"
+    }
+  },
+  
+  // 工作区配置
+  "explorer.fileNesting.enabled": true,
+  "explorer.fileNesting.patterns": {
+    "*.js": "${capture}.min.js,${capture}.d.ts",
+    "*.json": "${capture}.schema.json",
+    "package.json": "package-lock.json,npm-shrinkwrap.json,yarn.lock"
+  },
+  
+  // Git 配置
+  "git.enableSmartCommit": true,
+  "git.confirmSync": false,
+  "git.autofetch": true,
+  
+  // 任务和调试
+  "task.autoDetect": "on",
+  "debug.allowBreakpointsEverywhere": true
+}

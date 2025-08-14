@@ -1,0 +1,192 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "列出所有项目",
+      "type": "shell",
+      "command": "node",
+      "args": ["index.js", "--list-projects"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "new"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "运行PR评审",
+      "type": "shell",
+      "command": "node", 
+      "args": ["index.js", "${input:projectName}", "${input:mrNumber}"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "new"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "测试项目查询",
+      "type": "shell",
+      "command": "node",
+      "args": ["test-project-search.js"],
+      "group": "test",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "new"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "健康检查",
+      "type": "shell",
+      "command": "node",
+      "args": ["src/utils/health-check.js"],
+      "group": "test",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "new"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "验证配置",
+      "type": "shell",
+      "command": "node",
+      "args": ["src/utils/validate-config.js"],
+      "group": "test",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "new"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "切换AI提供商",
+      "type": "shell",
+      "command": "node",
+      "args": ["src/utils/switch-ai-provider.js"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "new"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "启动文件服务器",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/file-server.sh",
+      "group": "build",
+      "isBackground": true,
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "dedicated"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "安装依赖",
+      "type": "shell",
+      "command": "npm",
+      "args": ["install"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "new"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "查看项目结构",
+      "type": "shell",
+      "command": "tree",
+      "args": ["/F"],
+      "windows": {
+        "command": "tree",
+        "args": ["/F"]
+      },
+      "linux": {
+        "command": "tree",
+        "args": ["-a"]
+      },
+      "osx": {
+        "command": "tree",
+        "args": ["-a"]
+      },
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "new"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "清理临时文件",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-Command",
+        "Remove-Item -Path temp/* -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item -Path reports/* -Recurse -Force -ErrorAction SilentlyContinue; Write-Host '清理完成'"
+      ],
+      "windows": {
+        "command": "powershell",
+        "args": [
+          "-Command",
+          "Remove-Item -Path temp/* -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item -Path reports/* -Recurse -Force -ErrorAction SilentlyContinue; Write-Host '清理完成'"
+        ]
+      },
+      "linux": {
+        "command": "sh",
+        "args": ["-c", "rm -rf temp/* reports/* && echo '清理完成'"]
+      },
+      "osx": {
+        "command": "sh", 
+        "args": ["-c", "rm -rf temp/* reports/* && echo '清理完成'"]
+      },
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "new"
+      },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "projectName",
+      "description": "项目名称（支持名称、路径、命名空间路径或ID）",
+      "default": "ZM App",
+      "type": "promptString"
+    },
+    {
+      "id": "mrNumber", 
+      "description": "MR编号",
+      "default": "161",
+      "type": "promptString"
+    }
+  ]
+}

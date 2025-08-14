@@ -1,0 +1,84 @@
+{
+  "Logger Import": {
+    "prefix": "log",
+    "body": [
+      "import Logger from '../utils/logger.js';",
+      "const logger = new Logger('${1:ComponentName}');"
+    ],
+    "description": "导入并初始化 Logger"
+  },
+  "Config Loader Import": {
+    "prefix": "config",
+    "body": [
+      "import configLoader from '../config/config-loader.js';",
+      "const config = configLoader.loadConfig();"
+    ],
+    "description": "导入并加载配置"
+  },
+  "Try Catch Block": {
+    "prefix": "try",
+    "body": [
+      "try {",
+      "  ${1:// 代码}",
+      "} catch (error) {",
+      "  logger.error('${2:操作失败}:', error);",
+      "  throw error;",
+      "}"
+    ],
+    "description": "带日志的 try-catch 块"
+  },
+  "Async Function": {
+    "prefix": "async",
+    "body": [
+      "async ${1:functionName}(${2:params}) {",
+      "  try {",
+      "    ${3:// 实现}",
+      "  } catch (error) {",
+      "    logger.error('${4:操作失败}:', error);",
+      "    throw error;",
+      "  }",
+      "}"
+    ],
+    "description": "异步函数模板"
+  },
+  "Class Template": {
+    "prefix": "class",
+    "body": [
+      "/**",
+      " * ${1:类描述}",
+      " */",
+      "class ${2:ClassName} {",
+      "  constructor(${3:params}) {",
+      "    this.logger = new Logger('${2:ClassName}');",
+      "    ${4:// 初始化}",
+      "  }",
+      "",
+      "  ${5:// 方法}",
+      "}",
+      "",
+      "export default ${2:ClassName};"
+    ],
+    "description": "类模板"
+  },
+  "Update Log Entry": {
+    "prefix": "update",
+    "body": [
+      "## ${CURRENT_YEAR}-${CURRENT_MONTH}-${CURRENT_DATE}",
+      "- ${1:变更描述}",
+      ""
+    ],
+    "description": "添加更新日志条目"
+  },
+  "JSDoc Function": {
+    "prefix": "jsdoc",
+    "body": [
+      "/**",
+      " * ${1:函数描述}",
+      " * @param {${2:type}} ${3:paramName} - ${4:参数描述}",
+      " * @returns {${5:returnType}} ${6:返回值描述}",
+      " * @throws {Error} ${7:异常描述}",
+      " */"
+    ],
+    "description": "JSDoc 注释模板"
+  }
+}

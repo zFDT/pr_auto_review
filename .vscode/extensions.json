@@ -1,0 +1,17 @@
+{
+  "recommendations": [
+    "github.copilot",
+    "github.copilot-chat", 
+    "ms-vscode.vscode-json",
+    "redhat.vscode-yaml",
+    "esbenp.prettier-vscode",
+    "davidanson.vscode-markdownlint",
+    "ms-vscode.vscode-eslint",
+    "bradlc.vscode-tailwindcss",
+    "formulahendry.code-runner",
+    "ms-vscode.references-view",
+    "gruntfuggly.todo-tree",
+    "christian-kohler.path-intellisense",
+    "streetsidesoftware.code-spell-checker"
+  ]
+}
