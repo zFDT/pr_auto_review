@@ -132,17 +132,23 @@ class ReviewStandardsManager {
    * @returns {Object} 语言特定的review标准
    */
   getLanguageStandards(language) {
-    const langKey = this.normalizeLanguageKey(language);
-    const globalStandards = this.standards.global_review_standards;
-    const languageSpecific = this.standards.language_specific_standards[langKey];
 
-    if (!languageSpecific) {
+    const globalStandards = this.standards.global_review_standards;
+    try {
+      const langKey = this.normalizeLanguageKey(language);
+      const languageSpecific = this.standards.language_specific_standards[langKey];
+
+      if (!languageSpecific) {
+        console.log(`⚠️ 未找到${language}的特定标准，使用全局标准`);
+        return globalStandards;
+      }
+
+      // 合并全局标准和语言特定标准
+      return this.mergeStandards(globalStandards, languageSpecific);
+    } catch (error) {
       console.log(`⚠️ 未找到${language}的特定标准，使用全局标准`);
       return globalStandards;
     }
-
-    // 合并全局标准和语言特定标准
-    return this.mergeStandards(globalStandards, languageSpecific);
   }
 
   /**
@@ -151,18 +157,23 @@ class ReviewStandardsManager {
    * @returns {Object} 项目特定的review标准
    */
   getProjectTypeStandards(projectType) {
-    const projectStandards = this.standards.project_type_standards[projectType];
     const globalStandards = this.standards.global_review_standards;
+    try {
+      const projectStandards = this.standards.project_type_standards[projectType];
 
-    if (!projectStandards) {
+      if (!projectStandards) {
+        console.log(`⚠️ 未找到${projectType}的特定标准，使用全局标准`);
+        return globalStandards;
+      }
+
+      return {
+        ...globalStandards,
+        project_focus: projectStandards.focus_areas
+      };
+    } catch (error) {
       console.log(`⚠️ 未找到${projectType}的特定标准，使用全局标准`);
       return globalStandards;
     }
-
-    return {
-      ...globalStandards,
-      project_focus: projectStandards.focus_areas
-    };
   }
 
   /**
